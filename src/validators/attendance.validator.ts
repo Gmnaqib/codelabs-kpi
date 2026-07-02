@@ -2,35 +2,67 @@ import attendanceRepository from "../repository/attendance.repository";
 import { attendanceStatus } from "../models/attendance/attendance.Interface";
 import userRepository from "../repository/user.repository";
 import settingRepository from "../repository/setting.respository";
+import mikrotikService from "../services/mikrotik.service";
+import timeSettingService from "../services/timeSetting.service";
 import dateHelper from "../helper/dateHelper";
+import { DateTime } from "luxon";
 import { Types } from "mongoose";
 
+const parseTime = (hhmm: string): { hour: number; minute: number } => {
+  const [hour, minute] = hhmm.split(":").map(Number);
+  return { hour, minute };
+};
+
+const getDayCode = (): "WEEKDAY" | "SATURDAY" => {
+  const weekday = DateTime.now().setZone("Asia/Jakarta").weekday;
+  if (weekday === 6) return "SATURDAY";
+  return "WEEKDAY";
+};
+
 export const attendanceValidate = {
-  checkIn: async (userId: Types.ObjectId, device: { device_id: string }, reason?: string): Promise<{ isLateCheckIn: boolean }> => {
+  checkIn: async (userId: Types.ObjectId, clientIp: string, reason?: string): Promise<{ isLateCheckIn: boolean }> => {
     const now = dateHelper.getNowWIBAsDateTime();
     const startOfDay = dateHelper.getStartOfDayWIB();
     const endOfDay = dateHelper.getEndOfDayWIB();
-    const timeIn = dateHelper.getTimeTodayWIB(6);
-    const timeLimit = dateHelper.getTimeTodayWIB(12);
-    const timeLateLimit = dateHelper.getTimeTodayWIB(14);
-    const { device_id } = device;
+
+    const dayCode = getDayCode();
+    const setting = await timeSettingService.findByCode(dayCode);
+
+    const { hour: inH, minute: inM } = parseTime(setting.checkin);
+    const { hour: limH, minute: limM } = parseTime(setting.checkinlimit);
+    const { hour: lateLimH, minute: lateLimM } = parseTime(setting.checkinlatelimit);
+
+    const timeIn = dateHelper.getTimeTodayWIB(inH, inM);
+    const timeLimit = dateHelper.getTimeTodayWIB(limH, limM);
+    const timeLateLimit = dateHelper.getTimeTodayWIB(lateLimH, lateLimM);
 
     if (now < timeIn) {
-      throw new Error("You can check in after 6:00");
+      throw new Error(`You can check in after ${setting.checkin}`);
     }
 
     if (now > timeLateLimit) {
       throw new Error("It's too late to check in");
     }
 
-    const userDevice = await userRepository.findUserDevice(userId);
+    // MikroTik DHCP-based device validation
+    const userDevice = await userRepository.findUserMacAddress(userId);
 
-    if (!userDevice?.device_id) {
+    if (!userDevice?.mac_address) {
       throw new Error("Device not found");
     }
 
-    if (userDevice.device_id !== device_id) {
-      throw new Error("Device not registered");
+    const isLoopback = clientIp === "127.0.0.1" || clientIp === "::1";
+    if (isLoopback) {
+      const leases = await mikrotikService.getDhcpLeases();
+      const onNetwork = leases.some((lease: any) => {
+        const mac = (lease["active-mac-address"] || lease["mac-address"] || "").toUpperCase().replace(/-/g, ":");
+        return mac === userDevice.mac_address!.toUpperCase();
+      });
+      if (!onNetwork) throw new Error("Device not found in MikroTik DHCP lease");
+    } else {
+      const detectedMac = await mikrotikService.getMacAddressByIp(clientIp);
+      if (!detectedMac) throw new Error("Device not found in MikroTik DHCP lease");
+      if (detectedMac !== userDevice.mac_address) throw new Error("Device not registered");
     }
 
     const userAttendance = await attendanceRepository.findOne({
@@ -53,31 +85,42 @@ export const attendanceValidate = {
     return { isLateCheckIn };
   },
 
-  checkOut: async (userId: Types.ObjectId, device: { device_id: string }): Promise<void> => {
+  checkOut: async (userId: Types.ObjectId, clientIp: string): Promise<void> => {
     const now = dateHelper.getNowWIBAsDateTime();
     const startOfDay = dateHelper.getStartOfDayWIB();
     const endOfDay = dateHelper.getEndOfDayWIB();
-    let timeOut = dateHelper.getTimeTodayWIB(11);
-    const { device_id } = device;
+
+    const dayCode = getDayCode();
+    const setting = await timeSettingService.findByCode(dayCode);
+    const { hour: outH, minute: outM } = parseTime(setting.checkout);
+    const { hour: lateH, minute: lateM } = parseTime(setting.checkoutlate);
+    let timeOut = dateHelper.getTimeTodayWIB(outH, outM);
+    const timeOutEnd = dateHelper.getTimeTodayWIB(lateH, lateM);
 
     const isRamadhan = await settingRepository.findSettingByCode("RAMADHAN");
-
     if (isRamadhan?.value === true) {
       timeOut = dateHelper.getTimeTodayWIB(16);
     }
 
-    if (now.weekday === 6) { // Saturday in Luxon (1=Mon, 6=Sat, 7=Sun)
-      timeOut = dateHelper.getTimeTodayWIB(16);
-    }
+    // MikroTik DHCP-based device validation
+    const userDevice = await userRepository.findUserMacAddress(userId);
 
-    const userDevice = await userRepository.findUserDevice(userId);
-
-    if (!userDevice?.device_id) {
+    if (!userDevice?.mac_address) {
       throw new Error("Device not found");
     }
 
-    if (userDevice.device_id !== device_id) {
-      throw new Error("Device not registered");
+    const isLoopbackOut = clientIp === "127.0.0.1" || clientIp === "::1";
+    if (isLoopbackOut) {
+      const leases = await mikrotikService.getDhcpLeases();
+      const onNetwork = leases.some((lease: any) => {
+        const mac = (lease["active-mac-address"] || lease["mac-address"] || "").toUpperCase().replace(/-/g, ":");
+        return mac === userDevice.mac_address!.toUpperCase();
+      });
+      if (!onNetwork) throw new Error("Device not found in MikroTik DHCP lease");
+    } else {
+      const detectedMac = await mikrotikService.getMacAddressByIp(clientIp);
+      if (!detectedMac) throw new Error("Device not found in MikroTik DHCP lease");
+      if (detectedMac !== userDevice.mac_address) throw new Error("Device not registered");
     }
 
     const userAttendance = await attendanceRepository.findOne({
@@ -94,6 +137,10 @@ export const attendanceValidate = {
 
     if (now < timeOut) {
       throw new Error("Too early to check out");
+    }
+
+    if (now > timeOutEnd) {
+      throw new Error(`Checkout time has passed (allowed until ${setting.checkoutlate})`);
     }
   },
 
@@ -134,22 +181,26 @@ export const attendanceValidate = {
 
   checkOutByMinister: async (targetUserId: Types.ObjectId): Promise<void> => {
     const now = dateHelper.getNowWIBAsDateTime();
-    let timeOutStart = dateHelper.getTimeTodayWIB(17);
-    const timeOutEnd = dateHelper.getTimeTodayWIB(19);
 
-    // Check for Ramadhan setting
+    const dayCode = getDayCode();
+    const setting = await timeSettingService.findByCode(dayCode);
+    const { hour: outH, minute: outM } = parseTime(setting.checkout);
+    const { hour: lateH, minute: lateM } = parseTime(setting.checkoutlate);
+
+    let timeOutStart = dateHelper.getTimeTodayWIB(outH, outM);
+    const timeOutEnd = dateHelper.getTimeTodayWIB(lateH, lateM);
+
     const isRamadhan = await settingRepository.findSettingByCode("RAMADHAN");
     if (isRamadhan?.value === true) {
       timeOutStart = dateHelper.getTimeTodayWIB(16);
     }
 
-    // Validate checkout time is within allowed range (17:00-19:00 or 16:00-19:00 during Ramadhan)
     if (now < timeOutStart) {
       throw new Error("Too early to check out");
     }
 
     if (now > timeOutEnd) {
-      throw new Error("Checkout time has passed (allowed until 19:00)");
+      throw new Error(`Checkout time has passed (allowed until ${setting.checkoutlate})`);
     }
   },
 };

@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 
 interface IAttendance {
   userId: Types.ObjectId;
+  id_kpi_detail?: Types.ObjectId;
   status?: attendanceStatus;
   checkIn?: Date;
   checkOut?: Date | null;

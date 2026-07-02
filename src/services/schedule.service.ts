@@ -2,6 +2,24 @@ import scheduleRepository from "../repository/schedule.repository";
 import ISchedule, { ScheduleType } from "../models/schedule/schedule.interface";
 import { Types } from "mongoose";
 
+const MAX_PICKET_USERS_PER_DAY = 6;
+
+const rotateRight = <T>(items: T[], shift: number): T[] => {
+  const n = items.length;
+  if (n === 0) return items;
+  const offset = shift % n;
+  if (offset === 0) return [...items];
+  return [...items.slice(n - offset), ...items.slice(0, n - offset)];
+};
+
+const capToActivePicketUsers = (schedule: ISchedule & { toObject: () => any }) => {
+  const plain = schedule.toObject();
+  return {
+    ...plain,
+    assignedUsers: (plain.assignedUsers ?? []).slice(0, MAX_PICKET_USERS_PER_DAY),
+  };
+};
+
 const scheduleService = {
   createSchedule: async (type: ScheduleType, date: Date, assignedUsers?: Types.ObjectId[], description?: string): Promise<ISchedule> => {
     if (!type || !date) {
@@ -60,17 +78,30 @@ const scheduleService = {
     const endDateNormalized = new Date(endDate);
     endDateNormalized.setHours(23, 59, 59, 999);
 
+    // Hitung occurrence per pattern+hari supaya rotasi piket konsisten dan tidak butuh filter manual lagi setelah dibuat
+    const occurrenceCount: Record<string, number> = {};
+
     while (currentDate <= endDateNormalized) {
       const dayOfWeek = currentDate.getDay();
 
-      for (const pattern of patterns) {
+      for (let i = 0; i < patterns.length; i++) {
+        const pattern = patterns[i];
         if (pattern.daysOfWeek.includes(dayOfWeek)) {
+          const occurrenceKey = `${i}-${dayOfWeek}`;
+          const occurrence = occurrenceCount[occurrenceKey] ?? 0;
+          occurrenceCount[occurrenceKey] = occurrence + 1;
+
+          const assignedUsers = type === ScheduleType.picket ? rotateRight(pattern.assignedUsers, occurrence) : pattern.assignedUsers;
+
           const scheduleData: Partial<ISchedule> = {
             type,
             date: new Date(currentDate),
-            assignedUsers: pattern.assignedUsers,
+            assignedUsers,
             description: pattern.description,
           };
+
+          // Hapus schedule lama di tanggal yang sama supaya tidak terjadi data dobel
+          await scheduleRepository.deleteSchedulesByTypeAndDate(type, currentDate);
 
           const createdSchedule = await scheduleRepository.createSchedule(scheduleData);
           createdSchedules.push(createdSchedule);
@@ -86,6 +117,27 @@ const scheduleService = {
 
   getAllSchedules: async (): Promise<ISchedule[]> => {
     return await scheduleRepository.findAllSchedules();
+  },
+
+  getTodayPicketSchedule: async (): Promise<any[]> => {
+    const schedules = await scheduleRepository.findSchedulesByTypeAndDate(ScheduleType.picket, new Date());
+
+    // assignedUsers sudah dirotasi saat dibuat (createBatchSchedule), di sini tinggal dipotong maksimal 6 orang
+    return schedules.map(capToActivePicketUsers);
+  },
+
+  getUpcomingPicketScheduleForSwap: async (): Promise<any[]> => {
+    const startDate = new Date();
+    startDate.setHours(0, 0, 0, 0);
+
+    const endDate = new Date();
+    endDate.setDate(endDate.getDate() + 13); // 2 minggu kedepan (hari ini + 13 hari)
+    endDate.setHours(23, 59, 59, 999);
+
+    const schedules = await scheduleRepository.findSchedulesByTypeAndDateRange(ScheduleType.picket, startDate, endDate);
+
+    // hanya posisi 1-6 yang ditampilkan sebagai kandidat tukar, karena kapasitas piket per hari cuma 6 orang
+    return schedules.map(capToActivePicketUsers);
   },
 
   getScheduleById: async (id: Types.ObjectId): Promise<ISchedule | null> => {

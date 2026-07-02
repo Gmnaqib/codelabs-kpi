@@ -61,6 +61,24 @@ const scheduleController = {
     }
   },
 
+  getTodayPicketSchedule: async (req: Request, res: Response): Promise<any> => {
+    try {
+      const schedules = await scheduleService.getTodayPicketSchedule();
+      return response({ res, code: 200, message: "Today's picket schedule retrieved successfully", data: schedules });
+    } catch (error: any) {
+      return response({ res, code: 500, message: error.message });
+    }
+  },
+
+  getUpcomingPicketScheduleForSwap: async (req: Request, res: Response): Promise<any> => {
+    try {
+      const schedules = await scheduleService.getUpcomingPicketScheduleForSwap();
+      return response({ res, code: 200, message: "Upcoming picket schedules for swap retrieved successfully", data: schedules });
+    } catch (error: any) {
+      return response({ res, code: 500, message: error.message });
+    }
+  },
+
   getAllSchedules: async (req: Request, res: Response): Promise<any> => {
     try {
       const { type, year, month, day, date, startDate, endDate } = req.query;

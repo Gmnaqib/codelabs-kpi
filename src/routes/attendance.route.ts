@@ -27,10 +27,14 @@ attendanceRouter.get(
 );
 
 // Attendance endpoints
+attendanceRouter.get("/me/today", authenticateToken, attendanceController.getMyStatusToday);
+attendanceRouter.get("/network-check", authenticateToken, attendanceController.networkCheck);
 attendanceRouter.post("/checkin", authenticateToken, attendanceController.checkin);
 attendanceRouter.patch("/checkout", authenticateToken, attendanceController.checkOut);
 attendanceRouter.patch("/leave-requests/review/:requestId", authenticateToken, roleMiddlewares(["admin", "minister of operation"]), attendanceController.reviewLeaveRequests);
 attendanceRouter.patch("/checkout-by-operational", authenticateToken, roleMiddlewares(["minister of operation", "admin"]), attendanceController.checkOutByMinister);
+attendanceRouter.patch("/checkout-all-by-operational", authenticateToken, roleMiddlewares(["minister of operation", "admin", "president"]), attendanceController.checkOutAllByMinister);
 attendanceRouter.post("/leave-requests-by-operational",authenticateToken,upload.single("attachment"),roleMiddlewares(["minister of operation", "admin"]),attendanceController.submitLeaveByOperational);
+attendanceRouter.post("/checkin-by-admin", authenticateToken, roleMiddlewares(["admin", "minister of operation", "president"]), attendanceController.checkinByAdmin);
 
 export default attendanceRouter;

@@ -1,21 +1,36 @@
-import KPI from "../models/kpi/kpi_item/kpi.item.schema";
-import IKPI from "../models/kpi/kpi_item/kpi.item.interface";
+import { KPIMaster, KPIDetail } from "../models/kpi/kpi_item/kpi.item.schema";
+import { IKPIMaster, IKPIDetail } from "../models/kpi/kpi_item/kpi.item.interface";
 import { Types } from "mongoose";
 
-interface KPIFilter {
+interface KPIMasterFilter {
   _id?: Types.ObjectId;
-  category?: Types.ObjectId;
-  code?: number;
+  kementerian?: string;
+}
+
+interface KPIDetailFilter {
+  _id?: Types.ObjectId;
+  id_kpi_master?: Types.ObjectId;
+  kpi_item?: string;
 }
 
 const KPIRepository = {
-  // CRUD operations for KPI items
-  createKPI: (kpiData: Partial<IKPI>) => KPI.create(kpiData),
-  findAllKPIs: () => KPI.find(),
-  findKPIById: (id: string) => KPI.findById(new Types.ObjectId(id)),
-  findKPIByFilter: (filter: KPIFilter) => KPI.find(filter),
-  findKPIByCode: (code: string) => KPI.findOne({ code }),
-  updateKPI: (id: string, kpiData: Partial<IKPI>) => KPI.updateOne({ _id: new Types.ObjectId(id) }, kpiData),
+  // KPI Master
+  createMaster: (data: Partial<IKPIMaster>) => KPIMaster.create(data),
+  findAllMasters: () => KPIMaster.find(),
+  findMasterById: (id: string) => KPIMaster.findById(new Types.ObjectId(id)),
+  findMasterByFilter: (filter: KPIMasterFilter) => KPIMaster.find(filter),
+  findMasterByKementerian: (kementerian: string) => KPIMaster.findOne({ kementerian }),
+  updateMaster: (id: string, data: Partial<IKPIMaster>) => KPIMaster.findByIdAndUpdate(new Types.ObjectId(id), data, { new: true }),
+  deleteMaster: (id: string) => KPIMaster.findByIdAndDelete(new Types.ObjectId(id)),
+
+  // KPI Detail 
+  createDetail: (data: Partial<IKPIDetail>) => KPIDetail.create(data),
+  findAllDetails: () => KPIDetail.find().populate("id_kpi_master"),
+  findDetailById: (id: string) => KPIDetail.findById(new Types.ObjectId(id)),
+  findDetailByFilter: (filter: KPIDetailFilter) => KPIDetail.find(filter),
+  findDetailsByMasterId: (masterId: string) => KPIDetail.find({ id_kpi_master: new Types.ObjectId(masterId) }),
+  updateDetail: (id: string, data: Partial<IKPIDetail>) => KPIDetail.findByIdAndUpdate(new Types.ObjectId(id), data, { new: true }),
+  deleteDetail: (id: string) => KPIDetail.findByIdAndDelete(new Types.ObjectId(id)),
 };
 
 export default KPIRepository;

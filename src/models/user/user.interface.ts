@@ -13,9 +13,10 @@ interface IUser {
   research?: Research;
   telegram_id?: string;
   telegram_username?: string;
-  device_id?: string;
-  change_device_id?: boolean;
+  mac_address?: string;
+  change_mac_address?: boolean;
   product_id?: string;
+  image_updated_at?: Date;
 }
 
 export enum Role {

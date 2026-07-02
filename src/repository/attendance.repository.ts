@@ -3,17 +3,18 @@ import IAttendance, { attendanceStatus, approvalStatus } from "../models/attenda
 import { Types } from "mongoose";
 
 interface filterAttendance {
-  userId: Types.ObjectId;
-  status: attendanceStatus;
-  start_date: Date;
-  end_date: Date;
-  approval_status: approvalStatus;
-  createdAt: Date | any;
-  checkIn: Date | any;
-  checkOut: Date | any;
-  year: number;
-  month: number;
-  day: number;
+  userId?: Types.ObjectId;
+  id_kpi_detail?: Types.ObjectId;
+  status?: attendanceStatus;
+  start_date?: Date;
+  end_date?: Date;
+  approval_status?: approvalStatus;
+  createdAt?: Date | any;
+  checkIn?: Date | any;
+  checkOut?: Date | any;
+  year?: number;
+  month?: number;
+  day?: number;
 }
 
 const attendanceRepository = {
@@ -36,7 +37,6 @@ const attendanceRepository = {
         startDate.setFullYear(dateFilter.year);
         endDate.setFullYear(dateFilter.year);
       }
-
       if (dateFilter.month !== undefined) {
         startDate.setMonth(dateFilter.month - 1, 1);
         startDate.setHours(0, 0, 0, 0);
@@ -48,7 +48,6 @@ const attendanceRepository = {
         endDate.setMonth(11, 31);
         endDate.setHours(23, 59, 59, 999);
       }
-
       if (dateFilter.day !== undefined && dateFilter.month !== undefined && dateFilter.year !== undefined) {
         startDate.setDate(dateFilter.day);
         endDate.setDate(dateFilter.day);
@@ -57,11 +56,7 @@ const attendanceRepository = {
 
       startDate.setHours(startDate.getHours() - UTC_OFFSET_HOURS);
       endDate.setHours(endDate.getHours() - UTC_OFFSET_HOURS);
-
-      query.createdAt = {
-        $gte: startDate,
-        $lte: endDate,
-      };
+      query.createdAt = { $gte: startDate, $lte: endDate };
     }
 
     return await Attendance.find(query);
@@ -71,9 +66,8 @@ const attendanceRepository = {
     const query: any = {};
     const UTC_OFFSET_HOURS = 7;
 
-    if (dateFilter.userId !== undefined) {
-      query.userId = dateFilter.userId;
-    }
+    if (dateFilter.userId !== undefined) query.userId = dateFilter.userId;
+    if (dateFilter.id_kpi_detail !== undefined) query.id_kpi_detail = dateFilter.id_kpi_detail;
 
     if (dateFilter.year !== undefined || dateFilter.month !== undefined || dateFilter.day !== undefined) {
       const startDate = new Date();
@@ -83,7 +77,6 @@ const attendanceRepository = {
         startDate.setFullYear(dateFilter.year);
         endDate.setFullYear(dateFilter.year);
       }
-
       if (dateFilter.month !== undefined) {
         startDate.setMonth(dateFilter.month - 1, 1);
         startDate.setHours(0, 0, 0, 0);
@@ -95,7 +88,6 @@ const attendanceRepository = {
         endDate.setMonth(11, 31);
         endDate.setHours(23, 59, 59, 999);
       }
-
       if (dateFilter.day !== undefined && dateFilter.month !== undefined && dateFilter.year !== undefined) {
         startDate.setDate(dateFilter.day);
         endDate.setDate(dateFilter.day);
@@ -104,11 +96,7 @@ const attendanceRepository = {
 
       startDate.setHours(startDate.getHours() - UTC_OFFSET_HOURS);
       endDate.setHours(endDate.getHours() - UTC_OFFSET_HOURS);
-
-      query.createdAt = {
-        $gte: startDate,
-        $lte: endDate,
-      };
+      query.createdAt = { $gte: startDate, $lte: endDate };
     }
 
     return await Attendance.find(query);

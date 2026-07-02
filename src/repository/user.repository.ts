@@ -12,8 +12,8 @@ interface UserFilter {
   role?: Role;
   status?: Status;
   research?: Research;
-  device_id?: string;
-  change_device_id?: boolean;
+  mac_address?: string;
+  change_mac_address?: boolean;
   telegram_id?: string;
   telegram_username?: string;
 }
@@ -29,7 +29,7 @@ const userRepository = {
     const query = includePassword ? User.findOne({ nim }) : User.findOne({ nim }).select("-password");
     return query.select("+image");
   },
-  findUserDevice: (id: Types.ObjectId) => User.findById(id).select("device_id"),
+  findUserMacAddress: (id: Types.ObjectId) => User.findById(id).select("mac_address"),
   updateUserById: (id: string, updateData: Partial<IUser>) => User.findByIdAndUpdate(id, updateData, { new: true }).select("-password"),
   updateUser: (filter: UserFilter, updateData: Partial<IUser>) => User.updateOne(filter, updateData),
   deleteUserById: (id: string) => User.findByIdAndDelete(id),

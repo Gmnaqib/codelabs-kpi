@@ -5,36 +5,21 @@ import { CompetitionStatus, CompetitionType } from "./competition.interface";
 
 const competitionSchema = new Schema<ICompetition>(
   {
-    userId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
-    name: {
-      type: String,
-      required: true,
-    },
-    description: {
-      type: String,
-      required: true,
-    },
-    deadline: {
-      type: Date,
-      required: true,
-    },
-    link: {
-      type: String,
-      required: true,
-    },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    id_kpi_detail: { type: mongoose.Schema.Types.ObjectId, ref: "KPIDetail", default: null },
+    name: { type: String, required: true },
+    description: { type: String, required: true },
+    deadline: { type: Date, required: true },
+    link: { type: String, required: true },
     status: {
       type: String,
-      enum: [CompetitionStatus.Approved, CompetitionStatus.Rejected, CompetitionStatus.Pending],
+      enum: Object.values(CompetitionStatus),
       default: CompetitionStatus.Pending,
       required: true,
     },
     type: {
       type: String,
-      enum: [CompetitionType.National, CompetitionType.International],
+      enum: Object.values(CompetitionType),
       required: true,
     },
   },
@@ -42,5 +27,4 @@ const competitionSchema = new Schema<ICompetition>(
 );
 
 const Competition = model<ICompetition>("Competition", competitionSchema);
-
 export default Competition;

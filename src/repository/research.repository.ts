@@ -1,15 +1,15 @@
 import Research from "../models/research/research.schema";
-import IResearch, { CategoryType, progressStatus, statusResearch } from "../models/research/research.interface";
+import IResearch, { progressStatus, ResearchStatus } from "../models/research/research.interface";
 import { Types } from "mongoose";
 
 interface ResearchFilter {
   _id?: Types.ObjectId | string;
   userId?: Types.ObjectId | string;
+  id_kpi_detail?: Types.ObjectId | string;
   week?: number;
-  category?: CategoryType;
   title?: string;
   progress?: progressStatus;
-  status?: statusResearch;
+  status?: ResearchStatus | { $ne: any } | { $gte: number };
   createdAt?: { $gte?: Date; $lte?: Date };
   updatedAt?: { $gte?: Date; $lte?: Date };
 }
@@ -23,34 +23,32 @@ const researchRepository = {
   findResearchByUserId: (userId: string) => Research.find({ userId }).populate("userId", "name").sort({ createdAt: -1 }),
   findMyResearch: (userId: string) => Research.find({ userId }).sort({ createdAt: -1 }),
   findResearchByWeek: (week: number) => Research.find({ week }).populate("userId", "name").sort({ createdAt: -1 }),
-  findResearchByCategory: (category: CategoryType) => Research.find({ category }).populate("userId", "name").sort({ createdAt: -1 }),
   findResearchByProgress: (progress: progressStatus) => Research.find({ progress }).populate("userId", "name").sort({ createdAt: -1 }),
-  findResearchByStatus: (status: statusResearch) => Research.find({ status }).populate("userId", "name").sort({ createdAt: -1 }),
-  findResearchWithFilters: (filters: { userId?: string; week?: number; category?: CategoryType; progress?: progressStatus; status?: statusResearch; date?: { year: number; month?: number } }) => {
+  findResearchByStatus: (status: ResearchStatus) => Research.find({ status }).populate("userId", "name").sort({ createdAt: -1 }),
+  findResearchWithFilters: (filters: {
+    userId?: string;
+    id_kpi_detail?: string;
+    week?: number;
+    progress?: progressStatus;
+    status?: ResearchStatus | { $ne: any };
+    date?: { year: number; month?: number };
+  }) => {
     const query: any = {};
 
     if (filters.userId) query.userId = filters.userId;
+    if (filters.id_kpi_detail) query.id_kpi_detail = new Types.ObjectId(filters.id_kpi_detail);
     if (filters.week) query.week = filters.week;
-    if (filters.category) query.category = filters.category;
     if (filters.progress) query.progress = filters.progress;
     if (filters.status) query.status = filters.status;
     if (filters.date) {
       if (filters.date.month) {
-        // Filter by month and year
         const startDate = new Date(filters.date.year, filters.date.month - 1, 1);
         const endDate = new Date(filters.date.year, filters.date.month, 0, 23, 59, 59, 999);
-        query.createdAt = {
-          $gte: startDate,
-          $lte: endDate,
-        };
+        query.createdAt = { $gte: startDate, $lte: endDate };
       } else {
-        // Filter by year only
         const startDate = new Date(filters.date.year, 0, 1);
         const endDate = new Date(filters.date.year, 11, 31, 23, 59, 59, 999);
-        query.createdAt = {
-          $gte: startDate,
-          $lte: endDate,
-        };
+        query.createdAt = { $gte: startDate, $lte: endDate };
       }
     }
 
@@ -72,31 +70,30 @@ const researchRepository = {
   countResearch: () => Research.countDocuments(),
   countResearchByFilter: (filter: ResearchFilter) => Research.countDocuments(filter),
 
-  countResearchWithFilters: (filters: { userId?: string; week?: number; category?: CategoryType; progress?: progressStatus; status?: statusResearch; date?: { year: number; month?: number } }) => {
+  countResearchWithFilters: (filters: {
+    userId?: string;
+    id_kpi_detail?: string;
+    week?: number;
+    progress?: progressStatus;
+    status?: ResearchStatus;
+    date?: { year: number; month?: number };
+  }) => {
     const query: any = {};
 
     if (filters.userId) query.userId = filters.userId;
+    if (filters.id_kpi_detail) query.id_kpi_detail = new Types.ObjectId(filters.id_kpi_detail);
     if (filters.week) query.week = filters.week;
-    if (filters.category) query.category = filters.category;
     if (filters.progress) query.progress = filters.progress;
     if (filters.status) query.status = filters.status;
     if (filters.date) {
       if (filters.date.month) {
-        // Filter by month and year
         const startDate = new Date(filters.date.year, filters.date.month - 1, 1);
         const endDate = new Date(filters.date.year, filters.date.month, 0, 23, 59, 59, 999);
-        query.createdAt = {
-          $gte: startDate,
-          $lte: endDate,
-        };
+        query.createdAt = { $gte: startDate, $lte: endDate };
       } else {
-        // Filter by year only
         const startDate = new Date(filters.date.year, 0, 1);
         const endDate = new Date(filters.date.year, 11, 31, 23, 59, 59, 999);
-        query.createdAt = {
-          $gte: startDate,
-          $lte: endDate,
-        };
+        query.createdAt = { $gte: startDate, $lte: endDate };
       }
     }
 
@@ -119,22 +116,10 @@ const researchRepository = {
           totalResearch: { $sum: 1 },
           finishedResearch: { $sum: { $cond: [{ $eq: ["$progress", "finished"] }, 1, 0] } },
           unfinishedResearch: { $sum: { $cond: [{ $eq: ["$progress", "unfinished"] }, 1, 0] } },
-          approvedResearch: { $sum: { $cond: [{ $eq: ["$status", "approved"] }, 1, 0] } },
-          pendingResearch: { $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] } },
-          rejectedResearch: { $sum: { $cond: [{ $eq: ["$status", "rejected"] }, 1, 0] } },
         },
       },
     ]);
-    return (
-      stats[0] || {
-        totalResearch: 0,
-        finishedResearch: 0,
-        unfinishedResearch: 0,
-        approvedResearch: 0,
-        pendingResearch: 0,
-        rejectedResearch: 0,
-      }
-    );
+    return stats[0] || { totalResearch: 0, finishedResearch: 0, unfinishedResearch: 0 };
   },
 
   getUserResearchStats: async (userId: string) => {
@@ -146,22 +131,10 @@ const researchRepository = {
           totalResearch: { $sum: 1 },
           finishedResearch: { $sum: { $cond: [{ $eq: ["$progress", "finished"] }, 1, 0] } },
           unfinishedResearch: { $sum: { $cond: [{ $eq: ["$progress", "unfinished"] }, 1, 0] } },
-          approvedResearch: { $sum: { $cond: [{ $eq: ["$status", "approved"] }, 1, 0] } },
-          pendingResearch: { $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] } },
-          rejectedResearch: { $sum: { $cond: [{ $eq: ["$status", "rejected"] }, 1, 0] } },
         },
       },
     ]);
-    return (
-      stats[0] || {
-        totalResearch: 0,
-        finishedResearch: 0,
-        unfinishedResearch: 0,
-        approvedResearch: 0,
-        pendingResearch: 0,
-        rejectedResearch: 0,
-      }
-    );
+    return stats[0] || { totalResearch: 0, finishedResearch: 0, unfinishedResearch: 0 };
   },
 };
 

@@ -1,14 +1,9 @@
 import { Schema, model } from "mongoose";
-import IKPIItem, { KPICategory } from "./kpi.item.interface";
+import IKPIMaster, { IKPIDetail, KPILabel } from "./kpi.item.interface";
 
-const kpiItemSchema = new Schema<IKPIItem>(
+const kpiMasterSchema = new Schema<IKPIMaster>(
   {
-    category: {
-      type: String,
-      enum: Object.values(KPICategory),
-      required: true,
-    },
-    code: {
+    kementerian: {
       type: String,
       required: true,
       unique: true,
@@ -21,6 +16,35 @@ const kpiItemSchema = new Schema<IKPIItem>(
   { timestamps: true },
 );
 
-const IKPIItem = model<IKPIItem>("KPIItem", kpiItemSchema);
+const kpiDetailSchema = new Schema<IKPIDetail>(
+  {
+    kpi_item: {
+      type: String,
+      required: true,
+    },
+    point: {
+      type: Number,
+      required: true,
+    },
+    id_kpi_master: {
+      type: Schema.Types.ObjectId,
+      ref: "KPIMaster",
+      required: true,
+    },
+    label: {
+      type: String,
+      enum: Object.values(KPILabel),
+      required: true,
+    },
+    max_activity: {
+      type: Number,
+      required: true,
+    },
+  },
+  { timestamps: true },
+);
 
-export default IKPIItem;
+export const KPIMaster = model<IKPIMaster>("KPIMaster", kpiMasterSchema, "kpi_masters");
+export const KPIDetail = model<IKPIDetail>("KPIDetail", kpiDetailSchema, "kpi_details");
+
+export default KPIMaster;

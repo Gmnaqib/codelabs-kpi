@@ -1,5 +1,6 @@
-import IResearch, { CategoryType, progressStatus, statusResearch } from "../models/research/research.interface";
+import IResearch, { progressStatus, ResearchStatus } from "../models/research/research.interface";
 import researchRepository from "../repository/research.repository";
+import { validateKpiDetailKementerian } from "../helper/kpi.detail.validator";
 
 const researchService = {
   createResearch: async (researchData: IResearch): Promise<IResearch> => {
@@ -17,29 +18,27 @@ const researchService = {
       throw new Error("Invalid URL format for link field");
     }
 
-    if (!researchData.status) {
-      researchData.status = statusResearch.pending;
+    // Validasi id_kpi_detail harus milik kementerian research
+    if (researchData.id_kpi_detail) {
+      await validateKpiDetailKementerian(researchData.id_kpi_detail.toString(), "research");
     }
 
-    const newResearch = await researchRepository.createResearch(researchData);
-    return newResearch;
+    return await researchRepository.createResearch(researchData);
   },
 
   getAllResearch: async (filters?: {
     userId?: string;
+    id_kpi_detail?: string;
     week?: number;
-    category?: CategoryType;
     progress?: progressStatus;
-    status?: statusResearch;
+    status?: ResearchStatus;
     date?: { year: number; month?: number };
   }): Promise<IResearch[]> => {
-    const research = await researchRepository.findResearchWithFilters(filters || {});
-    return research;
+    return await researchRepository.findResearchWithFilters(filters || {});
   },
 
   getResearchById: async (researchId: string): Promise<IResearch | null> => {
-    const research = await researchRepository.findResearchById(researchId);
-    return research;
+    return await researchRepository.findResearchById(researchId);
   },
 
   getResearchByIdWithoutPopulate: async (id: string): Promise<IResearch | null> => {
@@ -47,20 +46,16 @@ const researchService = {
   },
 
   getResearchByUserId: async (userId: string): Promise<IResearch[]> => {
-    const research = await researchRepository.findResearchByUserId(userId);
-    return research;
+    return await researchRepository.findResearchByUserId(userId);
   },
 
   getMyResearch: async (userId: string): Promise<IResearch[]> => {
-    const research = await researchRepository.findMyResearch(userId);
-    return research;
+    return await researchRepository.findMyResearch(userId);
   },
 
   updateResearch: async (researchId: string, updateData: Partial<IResearch>): Promise<any> => {
     const existingResearch = await researchRepository.findResearchById(researchId);
-    if (!existingResearch) {
-      throw new Error("Research record not found");
-    }
+    if (!existingResearch) throw new Error("Research record not found");
 
     if (updateData.week && updateData.week <= 0) {
       throw new Error("Week number must be a positive integer");
@@ -74,29 +69,12 @@ const researchService = {
       }
     }
 
-    if (updateData.userId || updateData.week || updateData.title) {
-      const userId = updateData.userId || existingResearch.userId;
-      const week = updateData.week || existingResearch.week;
-      const title = updateData.title || existingResearch.title;
-
-      const isChangingKey =
-        (updateData.userId && updateData.userId.toString() !== existingResearch.userId.toString()) ||
-        (updateData.week && updateData.week !== existingResearch.week) ||
-        (updateData.title && updateData.title.toLowerCase() !== existingResearch.title.toLowerCase());
-
-      if (isChangingKey) {
-        const duplicateResearch = await researchRepository.findDuplicateResearch(userId.toString(), week, title);
-        if (duplicateResearch && duplicateResearch._id.toString() !== researchId) {
-          throw new Error(`Research already exists for user on week ${week} with title "${title}"`);
-        }
-      }
+    if (updateData.id_kpi_detail) {
+      await validateKpiDetailKementerian(updateData.id_kpi_detail.toString(), "research");
     }
 
     const updatedResearch = await researchRepository.updateResearchById(researchId, updateData);
-
-    if (!updatedResearch) {
-      return null;
-    }
+    if (!updatedResearch) return null;
 
     const { _id, userId, ...responseData } = updatedResearch.toObject();
     return responseData;
@@ -104,9 +82,7 @@ const researchService = {
 
   updateMyResearch: async (researchId: string, updateData: Partial<IResearch>): Promise<any> => {
     const existingResearch = await researchRepository.findResearchByIdWithoutPopulate(researchId);
-    if (!existingResearch) {
-      throw new Error("Research record not found");
-    }
+    if (!existingResearch) throw new Error("Research record not found");
 
     if (updateData.week && updateData.week <= 0) {
       throw new Error("Week number must be a positive integer");
@@ -120,34 +96,19 @@ const researchService = {
       }
     }
 
-    if (updateData.week || updateData.title) {
-      const userId = existingResearch.userId;
-      const week = updateData.week || existingResearch.week;
-      const title = updateData.title || existingResearch.title;
-
-      const isChangingKey = (updateData.week && updateData.week !== existingResearch.week) || (updateData.title && updateData.title.toLowerCase() !== existingResearch.title.toLowerCase());
-
-      if (isChangingKey) {
-        const duplicateResearch = await researchRepository.findDuplicateResearch(userId.toString(), week, title);
-        if (duplicateResearch && duplicateResearch._id.toString() !== researchId) {
-          throw new Error(`Research already exists for user on week ${week} with title "${title}"`);
-        }
-      }
+    if (updateData.id_kpi_detail) {
+      await validateKpiDetailKementerian(updateData.id_kpi_detail.toString(), "research");
     }
 
     const updatedResearch = await researchRepository.updateResearchById(researchId, updateData);
-
-    if (!updatedResearch) {
-      return null;
-    }
+    if (!updatedResearch) return null;
 
     const { _id, userId, ...responseData } = updatedResearch.toObject();
     return responseData;
   },
 
   deleteResearch: async (researchId: string): Promise<IResearch | null> => {
-    const research = await researchRepository.deleteResearchById(researchId);
-    return research;
+    return await researchRepository.deleteResearchById(researchId);
   },
 
   checkResearchExists: async (userId: string, week: number, title: string): Promise<boolean> => {
@@ -156,50 +117,28 @@ const researchService = {
   },
 
   getResearchSummary: async (dateFilter?: { year: number; month?: number }) => {
-    const approvedResearch = await researchRepository.findResearchWithFilters({
-      status: statusResearch.approved,
+    const research = await researchRepository.findResearchWithFilters({
+      status: { $ne: null } as any,
       ...(dateFilter && { date: dateFilter }),
     });
 
-    // Group by user
     const userMap = new Map<string, { userName: string; data: IResearch[] }>();
-
-    approvedResearch.forEach((research) => {
-      const userId = (research.userId as any)?._id?.toString() || research.userId.toString();
+    research.forEach((r) => {
+      const userId = (r.userId as any)?._id?.toString() || r.userId.toString();
       if (!userMap.has(userId)) {
-        userMap.set(userId, {
-          userName: (research.userId as any)?.name || "Unknown User",
-          data: [],
-        });
+        userMap.set(userId, { userName: (r.userId as any)?.name || "Unknown User", data: [] });
       }
-      userMap.get(userId)!.data.push(research);
+      userMap.get(userId)!.data.push(r);
     });
 
-    // Build summary per user
-    const byUser = Array.from(userMap.entries()).map(([userId, userData]) => {
-      const categoryCounts = {
-        [CategoryType.Personal]: 0,
-        [CategoryType.Product]: 0,
-        [CategoryType.workshop]: 0,
-      };
+    const byUser = Array.from(userMap.entries()).map(([userId, userData]) => ({
+      userId,
+      userName: userData.userName,
+      total: userData.data.length,
+      data: userData.data,
+    }));
 
-      userData.data.forEach((research) => {
-        categoryCounts[research.category]++;
-      });
-
-      return {
-        userId,
-        userName: userData.userName,
-        total: userData.data.length,
-        byCategory: categoryCounts,
-        data: userData.data,
-      };
-    });
-
-    return {
-      totalApproved: approvedResearch.length,
-      byUser,
-    };
+    return { totalApproved: research.length, byUser };
   },
 };
 

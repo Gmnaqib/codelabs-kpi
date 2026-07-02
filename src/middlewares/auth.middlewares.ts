@@ -34,8 +34,8 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
       image: decoded.image,
       status: decoded.status,
       research: decoded.research,
-      change_device_id: decoded.change_device_id,
-      device_id: decoded.device_id,
+      change_mac_address: decoded.change_mac_address,
+      mac_address: decoded.mac_address,
     };
     next();
   } catch (err: any) {

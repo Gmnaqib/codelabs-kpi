@@ -1,6 +1,7 @@
 import userRepository from "../repository/user.repository";
 import userValidate from "../validators/user.validator";
 import IUser, { Role, Status, Research } from "../models/user/user.interface";
+import mikrotikService from "./mikrotik.service";
 import bcrypt from "bcrypt";
 import fs from "fs";
 import path from "path";
@@ -25,7 +26,7 @@ const userService = {
   },
 
   updateByUser: async (userId: string, userData: { name?: string; password?: string; address?: string }, imageFile?: Express.Multer.File): Promise<IUser> => {
-    await userValidate.updateByUser(userId, userData);
+    await userValidate.updateByUser(userId, userData, !!imageFile);
     const { name, password, address } = userData;
     const user = await userRepository.findUserById(userId, true);
 
@@ -38,6 +39,18 @@ const userService = {
 
     // Handle image upload
     if (imageFile) {
+      // Check 24-hour cooldown (skip for admin)
+      if (user!.role !== "admin" && user!.image_updated_at) {
+        const diffMs = Date.now() - new Date(user!.image_updated_at).getTime();
+        if (diffMs < 7 * 24 * 60 * 60 * 1000) {
+          const remaining = 7 * 24 * 60 * 60 * 1000 - diffMs;
+          const days = Math.floor(remaining / (1000 * 60 * 60 * 24));
+          const hours = Math.floor((remaining % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+          const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+          throw new Error(`Foto baru bisa diubah dalam ${days} hari ${hours} jam ${minutes} menit lagi`);
+        }
+      }
+
       // Delete old image if exists
       if (user!.image) {
         const oldImagePath = path.join(process.cwd(), user!.image);
@@ -46,9 +59,10 @@ const userService = {
         }
       }
 
-      // Save new image path
+      // Save new image path and update timestamp
       const imageUrl = `/uploads/profiles/${imageFile.filename}`;
       user!.image = imageUrl;
+      (user as any).image_updated_at = new Date();
     }
 
     await user!.save();
@@ -64,10 +78,11 @@ const userService = {
       status?: Status;
       research?: Research;
       product_id?: string;
-      change_device_id?: boolean;
+      change_mac_address?: boolean;
+      mac_address?: string;
     },
   ): Promise<IUser> => {
-    const { name, password, role, status, research, product_id, change_device_id } = userData;
+    const { name, password, role, status, research, product_id, change_mac_address, mac_address } = userData;
     const user = await userRepository.findUserById(userId, true);
 
     if (password) {
@@ -80,19 +95,27 @@ const userService = {
     if (status) user!.status = status;
     if (research) user!.research = research;
     if (product_id) user!.product_id = product_id;
-    if (change_device_id !== undefined) user!.change_device_id = change_device_id;
+    if (change_mac_address !== undefined) user!.change_mac_address = change_mac_address;
+    if (mac_address) user!.mac_address = mac_address.toUpperCase().replace(/-/g, ":");
 
     await user!.save();
     return user!;
   },
 
-  updateDeviceId: async (userId: string, deviceId: string): Promise<IUser> => {
-    await userValidate.updateDeviceId(userId, deviceId);
+  updateDeviceId: async (userId: string, clientIp: string): Promise<IUser> => {
+    await userValidate.updateDeviceId(userId);
+
+    // Resolve MAC address from MikroTik DHCP lease using client IP
+    const detectedMac = await mikrotikService.getMacAddressByIp(clientIp);
 
     const user = await userRepository.findUserById(userId, true);
 
-    user!.device_id = deviceId;
-    user!.change_device_id = false;
+    if (!detectedMac) {
+      throw new Error("Device not found in MikroTik DHCP lease");
+    }
+
+    user!.mac_address = detectedMac;
+    user!.change_mac_address = false;
     await user!.save();
     return user!;
   },

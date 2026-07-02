@@ -1,685 +1,165 @@
 import { Request, Response } from "express";
 import { AuthRequest } from "../middlewares/auth.middlewares";
 import KPICountService from "../services/kpi.count.services";
-import KPIItemService from "../services/kpi.services";
 import userRepository from "../repository/user.repository";
 import response from "../helper/response";
 import { Status } from "../models/user/user.interface";
 
+const parseDateFilter = (query: any): { year: number; month?: number } | undefined => {
+  const { year, month } = query;
+  if (!year) return undefined;
+  const yearNum = parseInt(year as string);
+  if (isNaN(yearNum) || yearNum < 1900) return undefined;
+  const dateFilter: { year: number; month?: number } = { year: yearNum };
+  if (month) {
+    const monthNum = parseInt(month as string);
+    if (!isNaN(monthNum) && monthNum >= 1 && monthNum <= 12) {
+      dateFilter.month = monthNum;
+    }
+  }
+  return dateFilter;
+};
+
 const KPICountController = {
-  getResearchPointsSummary: async (req: Request, res: Response): Promise<any> => {
-    try {
-      const { year, month } = req.query;
-      const dateFilter: any = {};
 
-      if (year) {
-        const yearNum = parseInt(year as string);
-        if (isNaN(yearNum) || yearNum < 1900) {
-          return response({ res, code: 400, message: "Year must be a valid number" });
-        }
-        dateFilter.year = yearNum;
-      }
-
-      if (month) {
-        if (!year) {
-          return response({ res, code: 400, message: "Year is required when filtering by month" });
-        }
-        const monthNum = parseInt(month as string);
-        if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-          return response({ res, code: 400, message: "Month must be a number between 1 and 12" });
-        }
-        dateFilter.month = monthNum;
-      }
-
-      const summary = await KPICountService.getResearchPointsSummary(Object.keys(dateFilter).length > 0 ? dateFilter : undefined);
-      return response({ res, code: 200, message: "Research points summary retrieved successfully", data: summary });
-    } catch (error: any) {
-      console.error("Error getting research points summary:", error);
-      return response({ res, code: 500, message: "Failed to retrieve research points summary" });
-    }
-  },
-
-  getMyResearchPointsSummary: async (req: AuthRequest, res: Response): Promise<any> => {
+  getMyKPISummary: async (req: AuthRequest, res: Response): Promise<any> => {
     try {
       const userId = req.user?.id;
-      if (!userId) {
-        return response({ res, code: 401, message: "Authentication required" });
-      }
+      if (!userId) return response({ res, code: 401, message: "Authentication required" });
+      const dateFilter = parseDateFilter(req.query);
 
-      const { year, month } = req.query;
-      const dateFilter: any = {};
+      const allSummaries = await KPICountService.getAllKPISummary(dateFilter);
+      const rankIndex = allSummaries.findIndex((s) => s.userId.toString() === userId.toString());
+      const summary = rankIndex >= 0 ? allSummaries[rankIndex] : await KPICountService.getMyKPISummary(userId, dateFilter);
+      const rank = rankIndex >= 0 ? rankIndex + 1 : null;
 
-      if (year) {
-        const yearNum = parseInt(year as string);
-        if (isNaN(yearNum) || yearNum < 1900) {
-          return response({ res, code: 400, message: "Year must be a valid number" });
-        }
-        dateFilter.year = yearNum;
-      }
-
-      if (month) {
-        if (!year) {
-          return response({ res, code: 400, message: "Year is required when filtering by month" });
-        }
-        const monthNum = parseInt(month as string);
-        if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-          return response({ res, code: 400, message: "Month must be a number between 1 and 12" });
-        }
-        dateFilter.month = monthNum;
-      }
-
-      const summary = await KPICountService.getMyResearchPointsSummary(userId, Object.keys(dateFilter).length > 0 ? dateFilter : undefined);
-      return response({ res, code: 200, message: "Your research points summary retrieved successfully", data: summary });
-    } catch (error: any) {
-      console.error("Error getting my research points summary:", error);
-      return response({ res, code: 500, message: "Failed to retrieve your research points summary" });
-    }
-  },
-
-  getAttendancePointsSummary: async (req: Request, res: Response): Promise<any> => {
-    try {
-      const { year, month } = req.query;
-      const dateFilter: any = {};
-
-      if (year) {
-        const yearNum = parseInt(year as string);
-        if (isNaN(yearNum) || yearNum < 1900) {
-          return response({ res, code: 400, message: "Year must be a valid number" });
-        }
-        dateFilter.year = yearNum;
-      }
-
-      if (month) {
-        if (!year) {
-          return response({ res, code: 400, message: "Year is required when filtering by month" });
-        }
-        const monthNum = parseInt(month as string);
-        if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-          return response({ res, code: 400, message: "Month must be a number between 1 and 12" });
-        }
-        dateFilter.month = monthNum;
-      }
-
-      const summary = await KPICountService.getAttendancePointsSummary(Object.keys(dateFilter).length > 0 ? dateFilter : undefined);
-      return response({ res, code: 200, message: "Attendance points summary retrieved successfully", data: summary });
-    } catch (error: any) {
-      console.error("Error getting attendance points summary:", error);
-      return response({ res, code: 500, message: "Failed to retrieve attendance points summary" });
-    }
-  },
-
-  getMyAttendancePointsSummary: async (req: AuthRequest, res: Response): Promise<any> => {
-    try {
-      const userId = req.user?.id;
-      if (!userId) {
-        return response({ res, code: 401, message: "Authentication required" });
-      }
-
-      const { year, month } = req.query;
-      const dateFilter: any = {};
-
-      if (year) {
-        const yearNum = parseInt(year as string);
-        if (isNaN(yearNum) || yearNum < 1900) {
-          return response({ res, code: 400, message: "Year must be a valid number" });
-        }
-        dateFilter.year = yearNum;
-      }
-
-      if (month) {
-        if (!year) {
-          return response({ res, code: 400, message: "Year is required when filtering by month" });
-        }
-        const monthNum = parseInt(month as string);
-        if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-          return response({ res, code: 400, message: "Month must be a number between 1 and 12" });
-        }
-        dateFilter.month = monthNum;
-      }
-
-      const summary = await KPICountService.getMyAttendancePointsSummary(userId, Object.keys(dateFilter).length > 0 ? dateFilter : undefined);
-      return response({ res, code: 200, message: "Your attendance points summary retrieved successfully", data: summary });
-    } catch (error: any) {
-      console.error("Error getting my attendance points summary:", error);
-      return response({ res, code: 500, message: "Failed to retrieve your attendance points summary" });
-    }
-  },
-
-  getSchedulePointsSummary: async (req: Request, res: Response): Promise<any> => {
-    try {
-      const { year, month } = req.query;
-      const dateFilter: any = {};
-
-      if (year) {
-        const yearNum = parseInt(year as string);
-        if (isNaN(yearNum) || yearNum < 1900) {
-          return response({ res, code: 400, message: "Year must be a valid number" });
-        }
-        dateFilter.year = yearNum;
-      }
-
-      if (month) {
-        if (!year) {
-          return response({ res, code: 400, message: "Year is required when filtering by month" });
-        }
-        const monthNum = parseInt(month as string);
-        if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-          return response({ res, code: 400, message: "Month must be a number between 1 and 12" });
-        }
-        dateFilter.month = monthNum;
-      }
-
-      const summary = await KPICountService.getSchedulePointsSummary(Object.keys(dateFilter).length > 0 ? dateFilter : undefined);
-      return response({ res, code: 200, message: "Schedule points summary retrieved successfully", data: summary });
-    } catch (error: any) {
-      console.error("Error getting schedule points summary:", error);
-      return response({ res, code: 500, message: "Failed to retrieve schedule points summary" });
-    }
-  },
-
-  // Alias untuk operational (picket & thematic)
-  getOperationalPointsSummary: async (req: Request, res: Response): Promise<any> => {
-    try {
-      const { year, month } = req.query;
-      const dateFilter: any = {};
-
-      if (year) {
-        const yearNum = parseInt(year as string);
-        if (isNaN(yearNum) || yearNum < 1900) {
-          return response({ res, code: 400, message: "Year must be a valid number" });
-        }
-        dateFilter.year = yearNum;
-      }
-
-      if (month) {
-        if (!year) {
-          return response({ res, code: 400, message: "Year is required when filtering by month" });
-        }
-        const monthNum = parseInt(month as string);
-        if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-          return response({ res, code: 400, message: "Month must be a number between 1 and 12" });
-        }
-        dateFilter.month = monthNum;
-      }
-
-      // Get schedule points summary
-      const scheduleSummary = await KPICountService.getSchedulePointsSummary(Object.keys(dateFilter).length > 0 ? dateFilter : undefined);
-
-      // Get attendance points summary
-      const attendanceSummary = await KPICountService.getAttendancePointsSummary(Object.keys(dateFilter).length > 0 ? dateFilter : undefined);
-
-      // Get all active users
-      const allUsers = await userRepository.findUsersByFilter({ status: Status.active });
-
-      // Create maps for schedule data by userName
-      const scheduleMap = new Map<string, any>();
-      scheduleSummary.byUser.forEach((user: any) => {
-        scheduleMap.set(user.userName, user);
+      return response({
+        res,
+        code: 200,
+        message: "KPI summary retrieved successfully",
+        data: { ...summary, totalPoints: summary.grand_total, rank },
       });
-
-      // Create a map of attendance data by userName for quick lookup
-      const attendanceMap = new Map<string, any>();
-      attendanceSummary.byUser.forEach((user: any) => {
-        attendanceMap.set(user.userName, user);
-      });
-
-      // Merge all users with schedule and attendance data
-      const mergedData = allUsers.map((user: any) => {
-        const scheduleData = scheduleMap.get(user.name);
-        const attendanceData = attendanceMap.get(user.name);
-
-        return {
-          userId: scheduleData?.userId || user._id?.toString(),
-          userName: user.name,
-          totalPoints: (scheduleData?.totalPoints || 0) + (attendanceData?.totalPoints || 0),
-          operationalDetail: {
-            picket: scheduleData?.operationalDetail?.picket
-              ? { count: scheduleData.operationalDetail.picket.count, total: scheduleData.operationalDetail.picket.total }
-              : {
-                  count: 0,
-                  total: 0,
-                },
-            thematic: scheduleData?.operationalDetail?.thematic
-              ? { count: scheduleData.operationalDetail.thematic.count, total: scheduleData.operationalDetail.thematic.total }
-              : {
-                  count: 0,
-                  total: 0,
-                },
-            attendance: {
-              count: attendanceData?.total || 0,
-              total: attendanceData?.totalPoints || 0,
-            },
-          },
-        };
-      });
-
-      return response({ res, code: 200, message: "Operational points summary (picket & thematic) with attendance retrieved successfully", data: mergedData });
     } catch (error: any) {
-      console.error("Error getting operational points summary:", error);
-      return response({ res, code: 500, message: "Failed to retrieve operational points summary" });
+      return response({ res, code: 500, message: error.message });
     }
   },
 
-  getMySchedulePointsSummary: async (req: AuthRequest, res: Response): Promise<any> => {
+  // GET /kpi/
+  getAllKPISummary: async (req: AuthRequest, res: Response): Promise<any> => {
     try {
-      const userId = req.user?.id;
-      if (!userId) {
-        return response({ res, code: 401, message: "Authentication required" });
-      }
-
-      const { year, month } = req.query;
-      const dateFilter: any = {};
-
-      if (year) {
-        const yearNum = parseInt(year as string);
-        if (isNaN(yearNum) || yearNum < 1900) {
-          return response({ res, code: 400, message: "Year must be a valid number" });
-        }
-        dateFilter.year = yearNum;
-      }
-
-      if (month) {
-        if (!year) {
-          return response({ res, code: 400, message: "Year is required when filtering by month" });
-        }
-        const monthNum = parseInt(month as string);
-        if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-          return response({ res, code: 400, message: "Month must be a number between 1 and 12" });
-        }
-        dateFilter.month = monthNum;
-      }
-
-      const summary = await KPICountService.getMySchedulePointsSummary(userId, Object.keys(dateFilter).length > 0 ? dateFilter : undefined);
-      return response({ res, code: 200, message: "Your schedule points summary retrieved successfully", data: summary });
-    } catch (error: any) {
-      console.error("Error getting my schedule points summary:", error);
-      return response({ res, code: 500, message: "Failed to retrieve your schedule points summary" });
-    }
-  },
-
-  // Point operational user (picket & thematic)
-  getMyOperationalPointsSummary: async (req: AuthRequest, res: Response): Promise<any> => {
-    try {
-      const userId = req.user?.id;
-      if (!userId) {
-        return response({ res, code: 401, message: "Authentication required" });
-      }
-
-      const { year, month } = req.query;
-      const dateFilter: any = {};
-
-      if (year) {
-        const yearNum = parseInt(year as string);
-        if (isNaN(yearNum) || yearNum < 1900) {
-          return response({ res, code: 400, message: "Year must be a valid number" });
-        }
-        dateFilter.year = yearNum;
-      }
-
-      if (month) {
-        if (!year) {
-          return response({ res, code: 400, message: "Year is required when filtering by month" });
-        }
-        const monthNum = parseInt(month as string);
-        if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-          return response({ res, code: 400, message: "Month must be a number between 1 and 12" });
-        }
-        dateFilter.month = monthNum;
-      }
-
-      // Get schedule points summary
-      const scheduleSummary = await KPICountService.getMySchedulePointsSummary(userId, Object.keys(dateFilter).length > 0 ? dateFilter : undefined);
-
-      // Get attendance points summary
-      const attendanceSummary = await KPICountService.getMyAttendancePointsSummary(userId, Object.keys(dateFilter).length > 0 ? dateFilter : undefined);
-
-      // Combine schedule and attendance into one operationalDetail
-      const mergedData = {
-        userId: scheduleSummary.userId,
-        userName: scheduleSummary.userName,
-        totalPoints: scheduleSummary.totalPoints,
-        operationalDetail: {
-          picket: {
-            count: scheduleSummary.operationalDetail.picket.count,
-            total: scheduleSummary.operationalDetail.picket.total,
-          },
-          thematic: {
-            count: scheduleSummary.operationalDetail.thematic.count,
-            total: scheduleSummary.operationalDetail.thematic.total,
-          },
-          attendance: {
-            count: attendanceSummary.total,
-            total: attendanceSummary.totalPoints,
-          },
-        },
-      };
-
-      return response({ res, code: 200, message: "Your operational points summary (picket & thematic) with attendance retrieved successfully", data: mergedData });
-    } catch (error: any) {
-      console.error("Error getting my operational points summary:", error);
-      return response({ res, code: 500, message: "Failed to retrieve your operational points summary" });
-    }
-  },
-  kpiStatistic: async (req: Request, res: Response): Promise<any> => {
-    try {
-      const { year } = req.query;
-
-      if (!year) {
-        return response({ res, code: 400, message: "year is required", data: null });
-      }
-
-      const statistics = await KPIItemService.getKpiStatistic(Number(year));
-      return response({ res, code: 200, message: "KPI statistic retrieved successfully", data: statistics });
-    } catch (error: any) {
-      return response({ res, code: 500, message: error.message, data: null });
-    }
-  },
-
-  getBrandingPointsSummary: async (req: Request, res: Response): Promise<any> => {
-    try {
-      const { year, month } = req.query;
-      const dateFilter: any = {};
-
-      if (year) {
-        const yearNum = parseInt(year as string);
-        if (isNaN(yearNum) || yearNum < 1900) {
-          return response({ res, code: 400, message: "Year must be a valid number" });
-        }
-        dateFilter.year = yearNum;
-      }
-
-      if (month) {
-        if (!year) {
-          return response({ res, code: 400, message: "Year is required when filtering by month" });
-        }
-        const monthNum = parseInt(month as string);
-        if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-          return response({ res, code: 400, message: "Month must be a number between 1 and 12" });
-        }
-        dateFilter.month = monthNum;
-      }
-
-      const summary = await KPICountService.getBrandingPointsSummary(Object.keys(dateFilter).length > 0 ? dateFilter : undefined);
-      return response({ res, code: 200, message: "Branding points summary retrieved successfully", data: summary });
-    } catch (error: any) {
-      console.error("Error getting branding points summary:", error);
-      return response({ res, code: 500, message: "Failed to retrieve branding points summary" });
-    }
-  },
-
-  getMyBrandingPointsSummary: async (req: AuthRequest, res: Response): Promise<any> => {
-    try {
-      const userId = req.user?.id;
-      if (!userId) {
-        return response({ res, code: 401, message: "Authentication required" });
-      }
-
-      const { year, month } = req.query;
-      const dateFilter: any = {};
-
-      if (year) {
-        const yearNum = parseInt(year as string);
-        if (isNaN(yearNum) || yearNum < 1900) {
-          return response({ res, code: 400, message: "Year must be a valid number" });
-        }
-        dateFilter.year = yearNum;
-      }
-
-      if (month) {
-        if (!year) {
-          return response({ res, code: 400, message: "Year is required when filtering by month" });
-        }
-        const monthNum = parseInt(month as string);
-        if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-          return response({ res, code: 400, message: "Month must be a number between 1 and 12" });
-        }
-        dateFilter.month = monthNum;
-      }
-
-      const summary = await KPICountService.getMyBrandingPointsSummary(userId, Object.keys(dateFilter).length > 0 ? dateFilter : undefined);
-      return response({ res, code: 200, message: "Your branding points summary retrieved successfully", data: summary });
-    } catch (error: any) {
-      console.error("Error getting my branding points summary:", error);
-      return response({ res, code: 500, message: "Failed to retrieve your branding points summary" });
-    }
-  },
-
-  getCompetitionPointsSummary: async (req: Request, res: Response): Promise<any> => {
-    try {
-      const { year, month } = req.query;
-      const dateFilter: any = {};
-
-      if (year) {
-        const yearNum = parseInt(year as string);
-        if (isNaN(yearNum) || yearNum < 1900) {
-          return response({ res, code: 400, message: "Year must be a valid number" });
-        }
-        dateFilter.year = yearNum;
-      }
-
-      if (month) {
-        if (!year) {
-          return response({ res, code: 400, message: "Year is required when filtering by month" });
-        }
-        const monthNum = parseInt(month as string);
-        if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-          return response({ res, code: 400, message: "Month must be a number between 1 and 12" });
-        }
-        dateFilter.month = monthNum;
-      }
-
-      const summary = await KPICountService.getCompetitionPointsSummary(Object.keys(dateFilter).length > 0 ? dateFilter : undefined);
-      return response({ res, code: 200, message: "Competition points summary retrieved successfully", data: summary });
-    } catch (error: any) {
-      console.error("Error getting competition points summary:", error);
-      return response({ res, code: 500, message: "Failed to retrieve competition points summary" });
-    }
-  },
-
-  getMyCompetitionPointsSummary: async (req: AuthRequest, res: Response): Promise<any> => {
-    try {
-      const userId = req.user?.id;
-      if (!userId) {
-        return response({ res, code: 401, message: "Authentication required" });
-      }
-
-      const { year, month } = req.query;
-      const dateFilter: any = {};
-
-      if (year) {
-        const yearNum = parseInt(year as string);
-        if (isNaN(yearNum) || yearNum < 1900) {
-          return response({ res, code: 400, message: "Year must be a valid number" });
-        }
-        dateFilter.year = yearNum;
-      }
-
-      if (month) {
-        if (!year) {
-          return response({ res, code: 400, message: "Year is required when filtering by month" });
-        }
-        const monthNum = parseInt(month as string);
-        if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-          return response({ res, code: 400, message: "Month must be a number between 1 and 12" });
-        }
-        dateFilter.month = monthNum;
-      }
-
-      const summary = await KPICountService.getMyCompetitionPointsSummary(userId, Object.keys(dateFilter).length > 0 ? dateFilter : undefined);
-      return response({ res, code: 200, message: "Your competition points summary retrieved successfully", data: summary });
-    } catch (error: any) {
-      console.error("Error getting my competition points summary:", error);
-      return response({ res, code: 500, message: "Failed to retrieve your competition points summary" });
-    }
-  },
-
-  getTotalPointsSummary: async (req: AuthRequest, res: Response): Promise<any> => {
-    try {
-      const { year, month } = req.query;
-      const dateFilter: any = {};
-
-      if (year) {
-        const yearNum = parseInt(year as string);
-        if (isNaN(yearNum) || yearNum < 1900) {
-          return response({ res, code: 400, message: "Year must be a valid number" });
-        }
-        dateFilter.year = yearNum;
-      }
-
-      if (month) {
-        if (!year) {
-          return response({ res, code: 400, message: "Year is required when filtering by month" });
-        }
-        const monthNum = parseInt(month as string);
-        if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-          return response({ res, code: 400, message: "Month must be a number between 1 and 12" });
-        }
-        dateFilter.month = monthNum;
-      }
-
-      const summary = await KPICountService.getTotalPointsSummary(Object.keys(dateFilter).length > 0 ? dateFilter : undefined);
-
-      const pointsMap = new Map<string, number>();
-      summary.byUser.forEach((user: any) => {
-        pointsMap.set(user.userName, user.totalPoints);
-      });
-      const allUsers = await userRepository.findUsersByFilter({ status: Status.active });
-      let simplifiedData = allUsers.map((user: any) => ({
-        userId: user._id?.toString(),
-        name: user.name,
-        totalPoints: pointsMap.get(user.name) || 0,
-      }));
-
-      // Filter based on user role
+      const dateFilter = parseDateFilter(req.query);
+      const summaries = await KPICountService.getAllKPISummary(dateFilter);
       const currentUserRole = req.user?.role;
+
+      let data = summaries.map((s, index) => ({
+        rank: index + 1,
+        userId: s.userId,
+        name: s.name,
+        image: s.image ?? null,
+        totalPoints: s.grand_total,
+        grand_total: s.grand_total,
+        categories: s.categories,
+      }));
+
       if (currentUserRole !== "admin") {
-        simplifiedData = simplifiedData.filter((user) => {
-          const userObj = allUsers.find((u) => u._id?.toString() === user.userId);
-          return userObj?.role !== "admin" && userObj?.role !== "lecturer";
-        });
+        const allUsers = await userRepository.findAllUsers();
+        const filteredIds = new Set(
+          allUsers
+            .filter((u: any) => u.role !== "admin" && u.role !== "lecturer")
+            .map((u: any) => u._id.toString())
+        );
+        data = data.filter((d) => filteredIds.has(d.userId.toString()));
+        data = data.map((d, index) => ({ ...d, rank: index + 1 }));
       }
 
-      // Sort by totalPoints descending and add rank
-      simplifiedData.sort((a, b) => b.totalPoints - a.totalPoints);
-      simplifiedData = simplifiedData.map((user, index) => ({
-        rank: index + 1,
-        ...user,
-      }));
-
-      return response({ res, code: 200, message: "Total points summary retrieved successfully", data: simplifiedData });
+      return response({ res, code: 200, message: "All KPI summaries retrieved successfully", data });
     } catch (error: any) {
-      console.error("Error getting total points summary:", error);
-      return response({ res, code: 500, message: "Failed to retrieve total points summary" });
+      return response({ res, code: 500, message: error.message });
     }
   },
 
-  getMyTotalPointsSummary: async (req: AuthRequest, res: Response): Promise<any> => {
-    try {
-      const userId = req.user?.id;
-      if (!userId) {
-        return response({ res, code: 401, message: "Authentication required" });
-      }
-
-      const { year, month } = req.query;
-      const dateFilter: any = {};
-
-      if (year) {
-        const yearNum = parseInt(year as string);
-        if (isNaN(yearNum) || yearNum < 1900) {
-          return response({ res, code: 400, message: "Year must be a valid number" });
-        }
-        dateFilter.year = yearNum;
-      }
-
-      if (month) {
-        if (!year) {
-          return response({ res, code: 400, message: "Year is required when filtering by month" });
-        }
-        const monthNum = parseInt(month as string);
-        if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-          return response({ res, code: 400, message: "Month must be a number between 1 and 12" });
-        }
-        dateFilter.month = monthNum;
-      }
-
-      const summary = await KPICountService.getMyTotalPointsSummary(userId, Object.keys(dateFilter).length > 0 ? dateFilter : undefined);
-
-      // Get all users' points for ranking
-      const allSummary = await KPICountService.getTotalPointsSummary(Object.keys(dateFilter).length > 0 ? dateFilter : undefined);
-
-      const pointsMap = new Map<string, number>();
-      allSummary.byUser.forEach((user: any) => {
-        pointsMap.set(user.userName, user.totalPoints);
-      });
-
-      // Get all active users with their points
-      const allUsers = await userRepository.findUsersByFilter({ status: Status.active });
-
-      let rankedData: { rank: number; name: any; totalPoints: number }[] = allUsers.map((user: any) => ({
-        name: user.name,
-        totalPoints: pointsMap.get(user.name) || 0,
-        rank: 0,
-      }));
-
-      // Sort by totalPoints descending and add rank
-      rankedData.sort((a, b) => b.totalPoints - a.totalPoints);
-      rankedData = rankedData.map((user, index) => ({
-        rank: index + 1,
-        name: user.name,
-        totalPoints: user.totalPoints,
-      }));
-
-      // Find current user's ranking
-      const userRanking = rankedData.find((u) => u.name === summary.userName);
-
-      const simplifiedData = {
-        userId: userId,
-        rank: userRanking?.rank || 0,
-        name: summary.userName,
-        totalPoints: summary.totalPoints,
-      };
-
-      return response({ res, code: 200, message: "Your total points summary retrieved successfully", data: simplifiedData });
-    } catch (error: any) {
-      console.error("Error getting my total points summary:", error);
-      return response({ res, code: 500, message: "Failed to retrieve your total points summary" });
-    }
-  },
-
-  getMyComprehensiveSummary: async (req: AuthRequest, res: Response): Promise<any> => {
+  getKPISummaryByUserId: async (req: AuthRequest, res: Response): Promise<any> => {
     try {
       const userId = req.params.userId as string;
-      if (!userId) {
-        return response({ res, code: 400, message: "User ID is required" });
-      }
-
-      const { year, month } = req.query;
-      const dateFilter: any = {};
-
-      if (year) {
-        const yearNum = parseInt(year as string);
-        if (isNaN(yearNum) || yearNum < 1900) {
-          return response({ res, code: 400, message: "Year must be a valid number" });
-        }
-        dateFilter.year = yearNum;
-      }
-
-      if (month) {
-        if (!year) {
-          return response({ res, code: 400, message: "Year is required when filtering by month" });
-        }
-        const monthNum = parseInt(month as string);
-        if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-          return response({ res, code: 400, message: "Month must be a number between 1 and 12" });
-        }
-        dateFilter.month = monthNum;
-      }
-
-      const summary = await KPICountService.getMyComprehensiveSummary(userId, Object.keys(dateFilter).length > 0 ? dateFilter : undefined);
-      return response({ res, code: 200, message: "Comprehensive summary retrieved successfully", data: summary });
+      if (!userId) return response({ res, code: 400, message: "User ID is required" });
+      const dateFilter = parseDateFilter(req.query);
+      const summary = await KPICountService.getMyKPISummary(userId, dateFilter);
+      return response({ res, code: 200, message: "KPI summary retrieved successfully", data: summary });
     } catch (error: any) {
-      console.error("Error getting comprehensive summary:", error);
-      return response({ res, code: 500, message: "Failed to retrieve comprehensive summary" });
+      return response({ res, code: 500, message: error.message });
+    }
+  },
+
+  // GET /kpi/statistic?year=2026
+  getKpiStatistic: async (req: Request, res: Response): Promise<any> => {
+    try {
+      const { year } = req.query;
+      if (!year) return response({ res, code: 400, message: "Year is required" });
+      const yearNum = parseInt(year as string);
+      if (isNaN(yearNum) || yearNum < 1900) return response({ res, code: 400, message: "Invalid year" });
+      const data = await KPICountService.getKpiStatistic(yearNum);
+      return response({ res, code: 200, message: "KPI statistic retrieved successfully", data });
+    } catch (error: any) {
+      return response({ res, code: 500, message: error.message });
+    }
+  },
+
+  // GET /kpi/me/operational?year=2026&month=6
+  getOperationalLeaderboard: async (req: AuthRequest, res: Response): Promise<any> => {
+    try {
+      const dateFilter = parseDateFilter(req.query);
+      const data = await KPICountService.getOperationalLeaderboard(dateFilter);
+      return response({ res, code: 200, message: "Operational leaderboard retrieved successfully", data });
+    } catch (error: any) {
+      return response({ res, code: 500, message: error.message });
+    }
+  },
+
+  // GET /kpi/operational?year=2026&month=6
+  getAllOperationalBreakdown: async (req: Request, res: Response): Promise<any> => {
+    try {
+      const dateFilter = parseDateFilter(req.query);
+      const data = await KPICountService.getAllOperationalBreakdown(dateFilter);
+      return response({ res, code: 200, message: "Operational breakdown retrieved successfully", data });
+    } catch (error: any) {
+      return response({ res, code: 500, message: error.message });
+    }
+  },
+
+  // GET /kpi/operational/me?year=2026&month=6
+  getMyOperationalSummary: async (req: AuthRequest, res: Response): Promise<any> => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) return response({ res, code: 401, message: "Authentication required" });
+      const dateFilter = parseDateFilter(req.query);
+      const data = await KPICountService.getMyOperationalSummary(userId, dateFilter);
+      return response({ res, code: 200, message: "Operational summary retrieved successfully", data });
+    } catch (error: any) {
+      return response({ res, code: 500, message: error.message });
+    }
+  },
+
+  // GET /kpi/research/me?year=2026&month=6
+  getMyResearchSummary: async (req: AuthRequest, res: Response): Promise<any> => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) return response({ res, code: 401, message: "Authentication required" });
+      const dateFilter = parseDateFilter(req.query);
+      const data = await KPICountService.getMyResearchSummary(userId, dateFilter);
+      return response({ res, code: 200, message: "Research summary retrieved successfully", data });
+    } catch (error: any) {
+      return response({ res, code: 500, message: error.message });
+    }
+  },
+
+  // GET /kpi/research?year=2026&month=6
+  getAllResearchSummary: async (req: Request, res: Response): Promise<any> => {
+    try {
+      const dateFilter = parseDateFilter(req.query);
+      const data = await KPICountService.getAllResearchSummary(dateFilter);
+      return response({ res, code: 200, message: "Research summary retrieved successfully", data });
+    } catch (error: any) {
+      return response({ res, code: 500, message: error.message });
     }
   },
 };

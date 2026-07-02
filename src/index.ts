@@ -3,12 +3,13 @@ import "dotenv/config";
 import path from "path";
 import multer from "multer";
 const app = express();
-const port = process.env.PORT;
+const port = Number(process.env.PORT) || 4000;
 import { connectDB } from "./config/db";
 import authRouter from "./routes/auth.route";
 import userRouter from "./routes/user.route";
 import attendanceRouter from "./routes/attendance.route";
 import settingRouter from "./routes/setting.route";
+import timeSettingRouter from "./routes/timeSetting.route";
 import scheduleRouter from "./routes/schedule.route";
 import operationalRecordRouter from "./routes/operationalRecord.route";
 import researchRouter from "./routes/research.route";
@@ -16,6 +17,7 @@ import competitionRouter from "./routes/competition.route";
 import brandingRouter from "./routes/branding.route";
 import kpiItemRouter from "./routes/kpi.route";
 import productRouter from "./routes/product.route";
+import debugRouter from "./routes/debug.route";
 import cors from "cors";
 
 connectDB();
@@ -59,6 +61,7 @@ app.use("/auth", authRouter);
 app.use("/users", userRouter);
 app.use("/attendance", attendanceRouter);
 app.use("/setting", settingRouter);
+app.use("/time-setting", timeSettingRouter);
 app.use("/schedules", scheduleRouter);
 app.use("/operational-records", operationalRecordRouter);
 app.use("/research", researchRouter);
@@ -66,7 +69,8 @@ app.use("/competition", competitionRouter);
 app.use("/branding", brandingRouter);
 app.use("/kpi", kpiItemRouter);
 app.use("/products", productRouter);
+app.use("/debug", debugRouter);
 
-app.listen(port, () => {
+app.listen(port,"0.0.0.0",() => {
   console.log(`App listening on http://localhost:${port}`);
 });

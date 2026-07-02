@@ -7,6 +7,7 @@ interface OperationalRecordFilter {
   _id?: Types.ObjectId | string;
   scheduleId?: Types.ObjectId | string;
   userId?: Types.ObjectId | string;
+  id_kpi_detail?: Types.ObjectId | string;
   type?: ScheduleType;
   date?: Date | { $gte?: Date; $lte?: Date };
   status?: "completed" | "pending" | "cancelled";
@@ -28,34 +29,36 @@ const operationalRecordRepository = {
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(date);
     endOfDay.setHours(23, 59, 59, 999);
-
-    return OperationalRecord.find({
-      date: { $gte: startOfDay, $lte: endOfDay },
-    })
+    return OperationalRecord.find({ date: { $gte: startOfDay, $lte: endOfDay } })
       .populate(["scheduleId", "userId"])
       .sort({ date: -1, createdAt: -1 });
   },
 
   findRecordsByDateRange: (startDate: Date, endDate: Date) =>
-    OperationalRecord.find({
-      date: { $gte: startDate, $lte: endDate },
-    })
+    OperationalRecord.find({ date: { $gte: startDate, $lte: endDate } })
       .populate(["scheduleId", "userId"])
       .sort({ date: -1, createdAt: -1 }),
 
   findRecordsByStatus: (status: string) => OperationalRecord.find({ status }).populate(["scheduleId", "userId"]).sort({ date: -1, createdAt: -1 }),
 
   findDuplicateRecord: (scheduleId: Types.ObjectId, userId: Types.ObjectId) =>
-    OperationalRecord.findOne({
-      scheduleId,
-      userId,
-    }),
+    OperationalRecord.findOne({ scheduleId, userId }),
 
-  findRecordsWithFilters: (filters: { scheduleId?: string; userId?: string; type?: ScheduleType; startDate?: Date; endDate?: Date; date?: Date; status?: string }) => {
+  findRecordsWithFilters: (filters: {
+    scheduleId?: string;
+    userId?: string;
+    id_kpi_detail?: string;
+    type?: ScheduleType;
+    startDate?: Date;
+    endDate?: Date;
+    date?: Date;
+    status?: string;
+  }) => {
     const query: any = {};
 
     if (filters.scheduleId) query.scheduleId = filters.scheduleId;
     if (filters.userId) query.userId = filters.userId;
+    if (filters.id_kpi_detail) query.id_kpi_detail = new Types.ObjectId(filters.id_kpi_detail);
     if (filters.type) query.type = filters.type;
     if (filters.status) query.status = filters.status;
 
@@ -80,11 +83,22 @@ const operationalRecordRepository = {
   deleteRecord: (filter: OperationalRecordFilter) => OperationalRecord.deleteOne(filter),
   countRecords: () => OperationalRecord.countDocuments(),
   countRecordsByFilter: (filter: OperationalRecordFilter) => OperationalRecord.countDocuments(filter),
-  countRecordsWithFilters: (filters: { scheduleId?: string; userId?: string; type?: ScheduleType; startDate?: Date; endDate?: Date; date?: Date; status?: string }) => {
+
+  countRecordsWithFilters: (filters: {
+    scheduleId?: string;
+    userId?: string;
+    id_kpi_detail?: string;
+    type?: ScheduleType;
+    startDate?: Date;
+    endDate?: Date;
+    date?: Date;
+    status?: string;
+  }) => {
     const query: any = {};
 
     if (filters.scheduleId) query.scheduleId = filters.scheduleId;
     if (filters.userId) query.userId = filters.userId;
+    if (filters.id_kpi_detail) query.id_kpi_detail = new Types.ObjectId(filters.id_kpi_detail);
     if (filters.type) query.type = filters.type;
     if (filters.status) query.status = filters.status;
 
@@ -104,10 +118,7 @@ const operationalRecordRepository = {
   },
 
   recordExists: (scheduleId: string, userId: string) =>
-    OperationalRecord.exists({
-      scheduleId,
-      userId,
-    }),
+    OperationalRecord.exists({ scheduleId, userId }),
 };
 
 export default operationalRecordRepository;

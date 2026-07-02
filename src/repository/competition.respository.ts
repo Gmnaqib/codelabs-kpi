@@ -5,6 +5,7 @@ import { Types } from "mongoose";
 interface CompetitionFilter {
   _id?: Types.ObjectId | string;
   userId?: Types.ObjectId | string;
+  id_kpi_detail?: Types.ObjectId | string;
   name?: string;
   description?: string;
   deadline?: Date;
@@ -18,39 +19,29 @@ const competitionRepository = {
   findAllCompetitions: () => Competition.find(),
   findMyCompetitions: (userId: string, year?: number, month?: number) => {
     const query: any = { userId: new Types.ObjectId(userId) };
-
     if (year !== undefined && month !== undefined) {
-      const startDate = new Date(year, month - 1, 1);
-      const endDate = new Date(year, month, 0, 23, 59, 59, 999);
       query.createdAt = {
-        $gte: startDate,
-        $lte: endDate,
+        $gte: new Date(year, month - 1, 1),
+        $lte: new Date(year, month, 0, 23, 59, 59, 999),
       };
     } else if (year !== undefined) {
-      const startDate = new Date(year, 0, 1);
-      const endDate = new Date(year, 11, 31, 23, 59, 59, 999);
       query.createdAt = {
-        $gte: startDate,
-        $lte: endDate,
+        $gte: new Date(year, 0, 1),
+        $lte: new Date(year, 11, 31, 23, 59, 59, 999),
       };
     }
-
     return Competition.find(query);
   },
   findCompetitionById: (id: string) => Competition.findById(id),
   findCompetition: (filter: CompetitionFilter) => Competition.findOne(filter),
   findCompetitionsByFilter: (filter: CompetitionFilter, date?: { year: number; month: number }) => {
     const query: any = { ...filter };
-
     if (date) {
-      const startDate = new Date(date.year, date.month - 1, 1);
-      const endDate = new Date(date.year, date.month, 0, 23, 59, 59, 999);
       query.createdAt = {
-        $gte: startDate,
-        $lte: endDate,
+        $gte: new Date(date.year, date.month - 1, 1),
+        $lte: new Date(date.year, date.month, 0, 23, 59, 59, 999),
       };
     }
-
     return Competition.find(query);
   },
   updateCompetitionById: (id: string, updateData: Partial<ICompetition>) => Competition.findByIdAndUpdate(id, updateData, { new: true }),

@@ -4,32 +4,63 @@ import { AuthRequest } from "../middlewares/auth.middlewares";
 import attendanceService from "../services/attendance.service";
 import fileUploadService from "../services/fileUpload.service";
 import attendanceRepository from "../repository/attendance.repository";
+import userRepository from "../repository/user.repository";
+import mikrotikService from "../services/mikrotik.service";
 import dateHelper from "../helper/dateHelper";
+import { getClientIp } from "../helper/networkHelper";
 import { Types } from "mongoose";
+
+const resolveAttendanceError = (message: string): { code: number; message: string } => {
+  const msg = message.toLowerCase();
+  if (msg.includes("mikrotik") || msg.includes("dhcp") || msg.includes("timed out") || msg.includes("failed to connect")) {
+    return { code: 403, message: "You are not connected to the Codelabs network" };
+  }
+  if (msg.includes("device not found in") || msg.includes("device not registered")) {
+    return { code: 403, message: "Your device is not registered on the Codelabs network" };
+  }
+  if (msg.includes("device not found")) {
+    return { code: 403, message: "MAC address is not registered in your profile" };
+  }
+  if (msg.includes("already checked in") || msg.includes("already check")) {
+    return { code: 400, message: "You have already checked in today" };
+  }
+  if (msg.includes("too late to check in") || msg.includes("too early") || msg.includes("check in after")) {
+    return { code: 400, message: message };
+  }
+  if (msg.includes("not checkin today")) {
+    return { code: 400, message: "You have not checked in today" };
+  }
+  if (msg.includes("reason is required")) {
+    return { code: 400, message: "Reason is required for late check-in" };
+  }
+  return { code: 500, message: "An internal server error occurred" };
+};
 
 const attendanceController = {
   checkin: async (req: AuthRequest, res: Response): Promise<any> => {
     try {
       const userId = req.user?.id;
-      const deviceData = req.body;
       const reason = req.body.reason;
+      const clientIp = getClientIp(req);
 
-      const result = await attendanceService.checkIn(userId, deviceData, reason);
+      const result = await attendanceService.checkIn(userId, clientIp, reason);
       return response({ res, code: 201, message: "Checkin success", data: result });
     } catch (error: any) {
-      return response({ res, code: 500, message: error.message });
+      const { code, message: msg } = resolveAttendanceError(error.message ?? "");
+      return response({ res, code, message: msg });
     }
   },
 
   checkOut: async (req: AuthRequest, res: Response): Promise<any> => {
     try {
       const userId = req.user?.id;
-      const deviceData = req.body;
+      const clientIp = getClientIp(req);
 
-      const result = await attendanceService.checkOut(userId, deviceData);
+      const result = await attendanceService.checkOut(userId, clientIp);
       return response({ res, code: 200, message: "Checkout success", data: result });
     } catch (error: any) {
-      return response({ res, code: 500, message: error.message });
+      const { code, message: msg } = resolveAttendanceError(error.message ?? "");
+      return response({ res, code, message: msg });
     }
   },
 
@@ -177,6 +208,79 @@ const attendanceController = {
     } catch (error: any) {
       return response({ res, code: 500, message: error.message });
     }
+  },
+
+  checkOutAllByMinister: async (req: AuthRequest, res: Response): Promise<any> => {
+    try {
+      const { reasonCheckOut } = req.body;
+
+      if (!reasonCheckOut || reasonCheckOut.trim() === "") {
+        return response({ res, code: 400, message: "Reason for checkout is required" });
+      }
+
+      const result = await attendanceService.checkOutAllByMinister(reasonCheckOut);
+      return response({ res, code: 200, message: `Checkout all success. ${result.checkedOut} user(s) checked out`, data: result });
+    } catch (error: any) {
+      return response({ res, code: 500, message: error.message });
+    }
+  },
+
+  getMyStatusToday: async (req: AuthRequest, res: Response): Promise<any> => {
+    try {
+      const userId = req.user?.id;
+      const startOfDay = dateHelper.getStartOfDayWIB();
+      const endOfDay = dateHelper.getEndOfDayWIB();
+      const record = await attendanceRepository.findOne({
+        userId: new Types.ObjectId(userId),
+        checkIn: { $gte: startOfDay, $lt: endOfDay },
+      });
+      return response({ res, code: 200, message: "Status today", data: {
+        checkedIn: !!record,
+        checkedOut: !!record?.checkOut,
+      }});
+    } catch (error: any) {
+      return response({ res, code: 500, message: error.message });
+    }
+  },
+
+  checkinByAdmin: async (req: AuthRequest, res: Response): Promise<any> => {
+    try {
+      const { userId } = req.body;
+
+      if (!userId) {
+        return response({ res, code: 400, message: "Target user ID is required" });
+      }
+
+      const result = await attendanceService.checkinByAdmin(new Types.ObjectId(userId));
+      return response({ res, code: 201, message: "Checkin by admin success", data: result });
+    } catch (error: any) {
+      return response({ res, code: 400, message: error.message });
+    }
+  },
+
+  networkCheck: async (req: AuthRequest, res: Response): Promise<any> => {
+    const clientIp = getClientIp(req).replace(/^::ffff:/, "").trim();
+    const mikrotikHost = process.env.MIKROTIK_HOST ?? "";
+    const subnetPrefix = mikrotikHost.split(".").slice(0, 3).join(".") + ".";
+    let connected = clientIp.startsWith(subnetPrefix);
+
+    // Fallback: jika request dari loopback (dev/same machine), cek MAC user di DHCP MikroTik
+    if (!connected && (clientIp === "127.0.0.1" || clientIp === "::1") && req.user?.id) {
+      try {
+        const userDevice = await userRepository.findUserMacAddress(new Types.ObjectId(req.user.id));
+        if (userDevice?.mac_address) {
+          const leases = await mikrotikService.getDhcpLeases();
+          connected = leases.some((lease: any) => {
+            const mac = (lease["active-mac-address"] || lease["mac-address"] || "").toUpperCase().replace(/-/g, ":");
+            return mac === userDevice.mac_address!.toUpperCase();
+          });
+        }
+      } catch {
+        connected = false;
+      }
+    }
+
+    return response({ res, code: 200, message: "Network check", data: { connected, clientIp } });
   },
 
   submitLeaveByOperational: async (req: AuthRequest, res: Response): Promise<any> => {

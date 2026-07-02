@@ -1,58 +1,34 @@
 import { Types } from "mongoose";
 
-export interface IKPIScoring {
-  activity: string;
-  detail: string;
-  score: number;
-}
-
 export interface IKPI {
   userId: Types.ObjectId;
   month: number;
   year: number;
-  scoring?: IKPIScoring[];
 }
 
-export interface KPISummary {
-  name: string;
-  totalAttendance: number;
-  totalTematik: number;
-  totalPicket: number;
-  totalPoint: number;
-  year: number;
-  month: number;
+export interface IKPIDetailResult {
+  kpiDetailId: Types.ObjectId;
+  kpi_item: string;
+  label: string;
+  point_per_activity: number;
+  jumlah_activity: number;
+  point_akhir: number;
 }
 
-export interface ResearchSummary {
-  name: string;
-  totalUnfinished: number;
-  totalFinished: number;
-  totalApproved: number;
-  totalPoint: number;
-  year: number;
-  month: number;
+export interface IKPICategoryResult {
+  kementerian: string;
+  bobot_master: number;
+  details: IKPIDetailResult[];
+  total_point: number;
 }
 
-export interface BrandingSummary {
+export interface IKPISummary {
+  userId: Types.ObjectId;
   name: string;
-  totalBeginner: number;
-  totalIntermediate: number;
-  totalAdvanced: number;
-  totalApproved: number;
-  totalPoint: number;
-  year: number;
   month: number;
-}
-
-export interface CompetitionSummary {
-  userId?: Types.ObjectId;
-  name: string;
-  totalNational: number;
-  totalInternational: number;
-  totalApproved: number;
-  totalPoint: number;
   year: number;
-  month: number;
+  categories: IKPICategoryResult[];
+  grand_total: number;
 }
 
 export interface TotalPointSummary {

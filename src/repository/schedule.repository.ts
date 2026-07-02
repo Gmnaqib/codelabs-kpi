@@ -60,6 +60,18 @@ const scheduleRepository = {
       .populate("assignedUsers", "_id nim name")
       .sort({ date: 1 }),
 
+  deleteSchedulesByTypeAndDate: (type: ScheduleType, date: Date) => {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    return Schedule.deleteMany({
+      type,
+      date: { $gte: startOfDay, $lte: endOfDay },
+    });
+  },
+
   updateScheduleById: (id: Types.ObjectId, updateData: Partial<ISchedule>) => Schedule.findByIdAndUpdate(id, updateData, { new: true }).populate("assignedUsers", "_id nim name"),
   updateSchedule: (filter: ScheduleFilter, updateData: Partial<ISchedule>) => Schedule.updateOne(filter, updateData),
   deleteScheduleById: (id: Types.ObjectId) => Schedule.findByIdAndDelete(id),

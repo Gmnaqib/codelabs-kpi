@@ -3,7 +3,7 @@ import { Types } from "mongoose";
 import { Role, Status, Research } from "../models/user/user.interface";
 
 export const userValidate = {
-  updateByUser: async (userId: string, userData: { name?: string; password?: string; address?: string }): Promise<void> => {
+  updateByUser: async (userId: string, userData: { name?: string; password?: string; address?: string }, hasFile?: boolean): Promise<void> => {
     if (!userId) {
       throw new Error("User ID is required");
     }
@@ -14,8 +14,8 @@ export const userValidate = {
 
     const { name, password, address } = userData || {};
 
-    // At least one field must be provided
-    if (!name && !password && !address) {
+    // At least one field must be provided (or a file upload)
+    if (!name && !password && !address && !hasFile) {
       throw new Error("At least one field (name, password, or address) must be provided");
     }
 
@@ -45,7 +45,7 @@ export const userValidate = {
       status?: Status;
       research?: Research;
       product_id?: string;
-      change_device_id?: boolean;
+      change_mac_address?: boolean;
     },
   ): Promise<void> => {
     if (!userId) {
@@ -56,10 +56,10 @@ export const userValidate = {
       throw new Error("Invalid user ID format");
     }
 
-    const { name, password, role, status, research, product_id, change_device_id } = userData;
+    const { name, password, role, status, research, product_id, change_mac_address } = userData;
 
     // At least one field must be provided
-    if (!name && !password && !role && !status && !research && !product_id && change_device_id === undefined) {
+    if (!name && !password && !role && !status && !research && !product_id && change_mac_address === undefined) {
       throw new Error("At least one field must be provided for update");
     }
 
@@ -90,7 +90,7 @@ export const userValidate = {
     }
   },
 
-  updateDeviceId: async (userId: string, deviceId: string | null): Promise<void> => {
+  updateDeviceId: async (userId: string): Promise<void> => {
     if (!userId) {
       throw new Error("User ID is required");
     }
@@ -105,18 +105,7 @@ export const userValidate = {
       throw new Error("User not found");
     }
 
-    if (deviceId === null) {
-      if (user.change_device_id !== true) {
-        throw new Error("You don't have permission to change device ID");
-      }
-      return;
-    }
-
-    if (!deviceId || deviceId.trim().length === 0) {
-      throw new Error("Device ID cannot be empty");
-    }
-
-    if (user.change_device_id !== true) {
+    if (user.change_mac_address !== true) {
       throw new Error("You don't have permission to change device ID");
     }
   },

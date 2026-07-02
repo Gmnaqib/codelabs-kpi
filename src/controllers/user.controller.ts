@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { AuthRequest } from "../middlewares/auth.middlewares";
 import response from "../helper/response";
 import userService from "../services/user.service";
+import { getClientIp } from "../helper/networkHelper";
 
 const userController = {
   getAllUsers: async (req: AuthRequest, res: Response): Promise<any> => {
@@ -47,7 +48,7 @@ const userController = {
   updateByAdmin: async (req: Request, res: Response): Promise<any> => {
     try {
       const userId = req.params.id as string;
-      const { name, password, role, status, research, change_device_id, product_id } = req.body;
+      const { name, password, role, status, research, change_mac_address, mac_address, product_id } = req.body;
 
       const user = await userService.updateByAdmin(userId as string, {
         name,
@@ -55,7 +56,8 @@ const userController = {
         role,
         status,
         research,
-        change_device_id,
+        change_mac_address,
+        mac_address,
         product_id,
       });
 
@@ -68,10 +70,10 @@ const userController = {
   updateDeviceId: async (req: AuthRequest, res: Response): Promise<any> => {
     try {
       const userId = req.user?.id;
-      const { device_id } = req.body;
+      const clientIp = getClientIp(req);
 
-      const user = await userService.updateDeviceId(userId, device_id);
-      return response({ res, code: 200, message: "User updated successfully", data: user });
+      const user = await userService.updateDeviceId(userId, clientIp);
+      return response({ res, code: 200, message: "Device registered successfully", data: user });
     } catch (error: any) {
       return response({ res, code: error.message === "User not found" ? 404 : 500, message: error.message, data: null });
     }

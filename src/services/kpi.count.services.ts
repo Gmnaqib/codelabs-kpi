@@ -1,914 +1,391 @@
-import IResearch, { CategoryType, progressStatus, statusResearch } from "../models/research/research.interface";
-import researchRepository from "../repository/research.repository";
 import KPIRepository from "../repository/kpi.respository";
+import researchRepository from "../repository/research.repository";
 import attendanceRepository from "../repository/attendance.repository";
 import operationalRecordRepository from "../repository/operationalRecord.repository";
 import brandingRepository from "../repository/branding.respository";
 import competitionRepository from "../repository/competition.respository";
 import userRepository from "../repository/user.repository";
 import { attendanceStatus } from "../models/attendance/attendance.Interface";
+import { CompetitionStatus } from "../models/competition/competition.interface";
 import { ScheduleType } from "../models/schedule/schedule.interface";
-import IBranding, { brandingStatus } from "../models/branding/branding.interface";
-import ICompetition, { CompetitionStatus } from "../models/competition/competition.interface";
-import { Status } from "../models/user/user.interface";
+import { Types } from "mongoose";
+
+const buildDateFilter = (dateFilter?: { year: number; month?: number }) => {
+  if (!dateFilter) return null;
+  if (dateFilter.month) {
+    return {
+      $gte: new Date(dateFilter.year, dateFilter.month - 1, 1),
+      $lte: new Date(dateFilter.year, dateFilter.month, 0, 23, 59, 59, 999),
+    };
+  }
+  return {
+    $gte: new Date(dateFilter.year, 0, 1),
+    $lte: new Date(dateFilter.year, 11, 31, 23, 59, 59, 999),
+  };
+};
+
+const hitungPoint = (point: number, maxActivity: number, jumlahActivity: number, label: string): number => {
+  const pointPerActivity = point / maxActivity;
+  const raw = pointPerActivity * jumlahActivity;
+  const result = label === "REQUIRED" ? Math.min(raw, point) : raw;
+  return Math.floor(result * 10) / 10;
+};
+
+const hitungPointRange = (point: number, maxActivity: number, nilaiStatus: number, label: string): number => {
+  const pointRangePer1 = point / maxActivity / 5;
+  const raw = pointRangePer1 * nilaiStatus;
+  const result = label === "REQUIRED" ? Math.min(raw, point) : raw;
+  return Math.floor(result * 10) / 10;
+};
 
 const KPICountService = {
-  getResearchSummary: async (dateFilter?: { year: number; month?: number }) => {
-    const approvedResearch = await researchRepository.findResearchWithFilters({
-      status: statusResearch.approved,
-      ...(dateFilter && { date: dateFilter }),
-    });
 
-    // Group by user
-    const userMap = new Map<string, { userName: string; data: IResearch[] }>();
+  getMyKPISummary: async (userId: string, dateFilter?: { year: number; month?: number }) => {
+    const userObjectId = new Types.ObjectId(userId);
+    const user = await userRepository.findUserById(userId);
+    if (!user) throw new Error("User not found");
 
-    approvedResearch.forEach((research) => {
-      const userId = (research.userId as any)?._id?.toString() || research.userId.toString();
-      if (!userMap.has(userId)) {
-        userMap.set(userId, {
-          userName: (research.userId as any)?.name || "Unknown User",
-          data: [],
+    const dateRange = buildDateFilter(dateFilter);
+    const masters: any[] = await KPIRepository.findAllMasters();
+    const categories: any[] = [];
+
+    for (const master of masters) {
+      const details: any[] = await KPIRepository.findDetailsByMasterId(master._id.toString());
+      const detailResults: any[] = [];
+
+      for (const detail of details) {
+        let jumlah_activity = 0;
+        let point_akhir = 0;
+        const kementerian = master.kementerian.toLowerCase();
+        const detailId = detail._id.toString();
+
+        if (kementerian === "operational") {
+          const attendanceRecords = await attendanceRepository.findAll({
+            userId: userObjectId,
+            id_kpi_detail: detail._id,
+            status: attendanceStatus.PRESENT,
+            checkOut: { $ne: null } as any,
+            ...(dateRange && { createdAt: dateRange }),
+          });
+          const operationalRecords = await operationalRecordRepository.findRecordsWithFilters({
+            userId,
+            id_kpi_detail: detailId,
+            ...(dateFilter && {
+              startDate: new Date(dateFilter.year, (dateFilter.month ?? 1) - 1, 1),
+              endDate: new Date(dateFilter.year, dateFilter.month ?? 12, 0, 23, 59, 59, 999),
+            }),
+          });
+          jumlah_activity = attendanceRecords.length + operationalRecords.length;
+          point_akhir = hitungPoint(detail.point, detail.max_activity, jumlah_activity, detail.label);
+
+        } else if (kementerian === "research") {
+          const records = await researchRepository.findResearchWithFilters({
+            userId,
+            id_kpi_detail: detailId,
+            status: { $ne: null } as any,
+            ...(dateFilter && { date: dateFilter }),
+          });
+          jumlah_activity = records.length;
+          const rawTotal = records.reduce((sum: number, r: any) => {
+            return sum + hitungPointRange(detail.point, detail.max_activity, r.status || 0, detail.label);
+          }, 0);
+          point_akhir = Math.floor(rawTotal * 10) / 10;
+
+        } else if (kementerian === "branding") {
+          const records = await brandingRepository.findBrandingsByFilter(
+            { userId: userObjectId, id_kpi_detail: detail._id, status: { $ne: null } },
+            dateFilter ? { year: dateFilter.year, month: dateFilter.month ?? new Date().getMonth() + 1 } : undefined
+          );
+          jumlah_activity = records.length;
+          const rawBranding = records.reduce((sum: number, r: any) => {
+            return sum + hitungPointRange(detail.point, detail.max_activity, r.status || 0, detail.label);
+          }, 0);
+          point_akhir = Math.floor(rawBranding * 10) / 10;
+
+        } else if (kementerian === "competition") {
+          const records = await competitionRepository.findCompetitionsByFilter(
+            { userId: userObjectId, id_kpi_detail: detail._id, status: CompetitionStatus.Approved },
+            dateFilter ? { year: dateFilter.year, month: dateFilter.month ?? new Date().getMonth() + 1 } : undefined
+          );
+          jumlah_activity = records.length;
+          point_akhir = hitungPoint(detail.point, detail.max_activity, jumlah_activity, detail.label);
+        }
+
+        detailResults.push({
+          kpiDetailId: detail._id,
+          kpi_item: detail.kpi_item,
+          label: detail.label,
+          point_per_activity: parseFloat(String(Math.floor((detail.point / detail.max_activity) * 10) / 10)),
+          jumlah_activity,
+          point_akhir,
         });
       }
-      userMap.get(userId)!.data.push(research);
-    });
 
-    // Build summary per user
-    const byUser = Array.from(userMap.entries()).map(([userId, userData]) => {
-      const categoryCounts = {
-        [CategoryType.Personal]: 0,
-        [CategoryType.Product]: 0,
-        [CategoryType.workshop]: 0,
-      };
+      const total_point = parseFloat(
+        String(Math.floor(detailResults.reduce((sum, d) => sum + d.point_akhir, 0) * 10) / 10)
+      );
 
-      userData.data.forEach((research) => {
-        categoryCounts[research.category]++;
-      });
-
-      return {
-        userId,
-        userName: userData.userName,
-        total: userData.data.length,
-        byCategory: categoryCounts,
-        data: userData.data,
-      };
-    });
-
-    return {
-      totalApproved: approvedResearch.length,
-      byUser,
-    };
-  },
-
-  getResearchPointsSummary: async (dateFilter?: { year: number; month?: number }) => {
-    // Get research summary grouped by user
-    const researchSummary = await KPICountService.getResearchSummary(dateFilter);
-
-    // Get KPI points for each code
-    const coCreationKPI = await KPIRepository.findKPIByCode("COCREATION");
-    const workshopKPI = await KPIRepository.findKPIByCode("WORKSHOP");
-
-    const coCreationPoint = coCreationKPI?.point || 0;
-    const workshopPoint = workshopKPI?.point || 0;
-
-    // Create a map of research data by userId
-    const researchMap = new Map<string, any>();
-    researchSummary.byUser.forEach((user) => {
-      researchMap.set(user.userId, user);
-    });
-
-    // Get all active users
-    const allUsers = await userRepository.findUsersByFilter({ status: Status.active });
-
-    // Map all users with research data or defaults
-    const byUserWithPoints = allUsers.map((user) => {
-      const userData = researchMap.get(user._id?.toString() || "");
-
-      if (userData) {
-        const personalPoints = userData.byCategory[CategoryType.Personal] * coCreationPoint;
-        const productPoints = userData.byCategory[CategoryType.Product] * coCreationPoint;
-        const workshopPoints = userData.byCategory[CategoryType.workshop] * workshopPoint;
-        const totalPoints = personalPoints + productPoints + workshopPoints;
-
-        return {
-          userId: userData.userId,
-          userName: userData.userName,
-          total: userData.total,
-          totalPoints,
-          byCategory: {
-            personal: {
-              count: userData.byCategory[CategoryType.Personal],
-              total: personalPoints,
-            },
-            product: {
-              count: userData.byCategory[CategoryType.Product],
-              total: productPoints,
-            },
-            workshop: {
-              count: userData.byCategory[CategoryType.workshop],
-              total: workshopPoints,
-            },
-          },
-        };
-      } else {
-        return {
-          userId: user._id?.toString(),
-          userName: user.name,
-          total: 0,
-          totalPoints: 0,
-          byCategory: {
-            personal: {
-              count: 0,
-              total: 0,
-            },
-            product: {
-              count: 0,
-              total: 0,
-            },
-            workshop: {
-              count: 0,
-              total: 0,
-            },
-          },
-        };
-      }
-    });
-
-    return {
-      totalApproved: researchSummary.totalApproved,
-      byUser: byUserWithPoints,
-    };
-  },
-
-  getMyResearchPointsSummary: async (userId: string, dateFilter?: { year: number; month?: number }) => {
-    // Get approved research for specific user
-    const approvedResearch = await researchRepository.findResearchWithFilters({
-      userId,
-      status: statusResearch.approved,
-      ...(dateFilter && { date: dateFilter }),
-    });
-
-    // Get KPI points for each code
-    const coCreationKPI = await KPIRepository.findKPIByCode("COCREATION");
-    const workshopKPI = await KPIRepository.findKPIByCode("WORKSHOP");
-
-    const coCreationPoint = coCreationKPI?.point || 0;
-    const workshopPoint = workshopKPI?.point || 0;
-
-    // Count by category
-    const categoryCounts = {
-      [CategoryType.Personal]: 0,
-      [CategoryType.Product]: 0,
-      [CategoryType.workshop]: 0,
-    };
-
-    approvedResearch.forEach((research) => {
-      categoryCounts[research.category]++;
-    });
-
-    // Calculate points
-    const personalPoints = categoryCounts[CategoryType.Personal] * coCreationPoint;
-    const productPoints = categoryCounts[CategoryType.Product] * coCreationPoint;
-    const workshopPoints = categoryCounts[CategoryType.workshop] * workshopPoint;
-    const totalPoints = personalPoints + productPoints + workshopPoints;
-
-    return {
-      userId,
-      userName: (approvedResearch[0]?.userId as any)?.name,
-      total: approvedResearch.length,
-      totalPoints,
-      byCategory: {
-        personal: {
-          count: categoryCounts[CategoryType.Personal],
-          total: personalPoints,
-        },
-        product: {
-          count: categoryCounts[CategoryType.Product],
-          total: productPoints,
-        },
-        workshop: {
-          count: categoryCounts[CategoryType.workshop],
-          total: workshopPoints,
-        },
-      },
-    };
-  },
-
-  getAttendancePointsSummary: async (dateFilter?: { year: number; month?: number }) => {
-    // Build query filter for attendance records
-    const query: any = {
-      status: attendanceStatus.PRESENT,
-    };
-
-    // Add date range filter if provided
-    if (dateFilter) {
-      if (dateFilter.month) {
-        const startDate = new Date(dateFilter.year, dateFilter.month - 1, 1);
-        const endDate = new Date(dateFilter.year, dateFilter.month, 0, 23, 59, 59, 999);
-        query.createdAt = { $gte: startDate, $lte: endDate };
-      } else if (dateFilter.year) {
-        const startDate = new Date(dateFilter.year, 0, 1);
-        const endDate = new Date(dateFilter.year, 11, 31, 23, 59, 59, 999);
-        query.createdAt = { $gte: startDate, $lte: endDate };
-      }
-    }
-
-    // Get all attendance records with PRESENT status
-    let attendanceRecords = await attendanceRepository.findAll(query);
-
-    // Filter records where checkOut is not null and not undefined
-    attendanceRecords = attendanceRecords.filter((record) => record.checkOut !== null && record.checkOut !== undefined);
-
-    // Get KPI points for ATTENDANCE code
-    const attendanceKPI = await KPIRepository.findKPIByCode("ATTENDANCE");
-    const attendancePoint = attendanceKPI?.point || 0;
-
-    // Group by user and collect unique userIds
-    const userMap = new Map<string, { count: number }>();
-    const userIds = new Set<string>();
-
-    attendanceRecords.forEach((record) => {
-      const userId = (record.userId as any)?._id?.toString() || record.userId.toString();
-      userIds.add(userId);
-      if (!userMap.has(userId)) {
-        userMap.set(userId, { count: 0 });
-      }
-      const userData = userMap.get(userId)!;
-      userData.count++;
-    });
-
-    // Fetch user data for all users
-    const userDataMap = new Map<string, any>();
-    for (const userId of userIds) {
-      const user = await userRepository.findUserById(userId);
-      userDataMap.set(userId, user);
-    }
-
-    // Calculate points for each user
-    const byUserWithPoints = Array.from(userMap.entries()).map(([userId, userData]) => {
-      const user = userDataMap.get(userId);
-      const userName = user?.name || "Unknown User";
-      const totalPoints = userData.count * attendancePoint;
-
-      return {
-        userId,
-        userName,
-        total: userData.count,
-        totalPoints,
-        detail: {
-          present: {
-            count: userData.count,
-            code: "ATTENDANCE",
-            point: attendancePoint,
-            total: totalPoints,
-          },
-        },
-      };
-    });
-
-    return {
-      totalPresent: attendanceRecords.length,
-      byUser: byUserWithPoints,
-    };
-  },
-
-  getMyAttendancePointsSummary: async (userId: string, dateFilter?: { year: number; month?: number }) => {
-    // Build query filter for attendance records
-    const query: any = {
-      userId: userId as any,
-      status: attendanceStatus.PRESENT,
-    };
-
-    // Add date range filter if provided
-    if (dateFilter) {
-      if (dateFilter.month) {
-        const startDate = new Date(dateFilter.year, dateFilter.month - 1, 1);
-        const endDate = new Date(dateFilter.year, dateFilter.month, 0, 23, 59, 59, 999);
-        query.createdAt = { $gte: startDate, $lte: endDate };
-      } else if (dateFilter.year) {
-        const startDate = new Date(dateFilter.year, 0, 1);
-        const endDate = new Date(dateFilter.year, 11, 31, 23, 59, 59, 999);
-        query.createdAt = { $gte: startDate, $lte: endDate };
-      }
-    }
-
-    // Get attendance records for specific user with PRESENT status
-    let attendanceRecords = await attendanceRepository.findAll(query);
-
-    // Filter records where checkOut is not null and not undefined
-    attendanceRecords = attendanceRecords.filter((record) => record.checkOut !== null && record.checkOut !== undefined);
-
-    // Get KPI points for ATTENDANCE code
-    const attendanceKPI = await KPIRepository.findKPIByCode("ATTENDANCE");
-    const attendancePoint = attendanceKPI?.point || 0;
-
-    // Fetch user data
-    const user = await userRepository.findUserById(userId);
-    const userName = user?.name || "Unknown User";
-
-    const totalPoints = attendanceRecords.length * attendancePoint;
-
-    return {
-      userId,
-      userName,
-      total: attendanceRecords.length,
-      totalPoints,
-      detail: {
-        present: {
-          count: attendanceRecords.length,
-          code: "ATTENDANCE",
-          point: attendancePoint,
-          total: totalPoints,
-        },
-      },
-    };
-  },
-
-  getSchedulePointsSummary: async (dateFilter?: { year: number; month?: number }) => {
-    // Get all operational records
-    const operationalRecords = await operationalRecordRepository.findAllRecords();
-
-    // Filter by date if provided
-    let filteredRecords = operationalRecords;
-    if (dateFilter) {
-      const startDate = new Date(dateFilter.year, dateFilter.month ? dateFilter.month - 1 : 0, 1);
-      const endDate = dateFilter.month ? new Date(dateFilter.year, dateFilter.month, 0, 23, 59, 59, 999) : new Date(dateFilter.year, 11, 31, 23, 59, 59, 999);
-
-      filteredRecords = operationalRecords.filter((record) => {
-        const recordDate = new Date(record.date);
-        return recordDate >= startDate && recordDate <= endDate;
+      categories.push({
+        kementerian: master.kementerian,
+        bobot_master: master.point,
+        details: detailResults,
+        total_point,
       });
     }
 
-    // Get KPI points for PICKET and THEMATIC
-    const picketKPI = await KPIRepository.findKPIByCode("PICKET");
-    const thematicKPI = await KPIRepository.findKPIByCode("THEMATIC");
-
-    const picketPoint = picketKPI?.point || 0;
-    const thematicPoint = thematicKPI?.point || 0;
-
-    // Group by user and collect unique userIds
-    const userMap = new Map<string, { picket: number; thematic: number }>();
-    const userIds = new Set<string>();
-
-    filteredRecords.forEach((record) => {
-      // Skip records with null userId
-      if (!record.userId) return;
-
-      const userId = (record.userId as any)?._id?.toString() || record.userId.toString();
-      userIds.add(userId);
-      if (!userMap.has(userId)) {
-        userMap.set(userId, { picket: 0, thematic: 0 });
-      }
-
-      const userData = userMap.get(userId)!;
-      if (record.type === ScheduleType.picket) {
-        userData.picket++;
-      } else if (record.type === ScheduleType.thematic) {
-        userData.thematic++;
-      }
-    });
-
-    // Fetch user data for all users
-    const userDataMap = new Map<string, any>();
-    for (const userId of userIds) {
-      const user = await userRepository.findUserById(userId);
-      userDataMap.set(userId, user);
-    }
-
-    // Calculate points for each user
-    const byUserWithPoints = Array.from(userMap.entries()).map(([userId, userData]) => {
-      const user = userDataMap.get(userId);
-      const userName = user?.name || "Unknown User";
-      const picketPoints = userData.picket * picketPoint;
-      const thematicPoints = userData.thematic * thematicPoint;
-      const totalPoints = picketPoints + thematicPoints;
-
-      return {
-        userId,
-        userName,
-        total: userData.picket + userData.thematic,
-        totalPoints,
-        operationalDetail: {
-          picket: {
-            count: userData.picket,
-            code: "PICKET",
-            point: picketPoint,
-            total: picketPoints,
-          },
-          thematic: {
-            count: userData.thematic,
-            code: "THEMATIC",
-            point: thematicPoint,
-            total: thematicPoints,
-          },
-        },
-      };
-    });
-
-    return {
-      totalSchedules: filteredRecords.length,
-      byUser: byUserWithPoints,
-    };
-  },
-
-  getMySchedulePointsSummary: async (userId: string, dateFilter?: { year: number; month?: number }) => {
-    // Get operational records for specific user
-    const operationalRecords = await operationalRecordRepository.findRecordsByUserId(userId);
-
-    // Filter by date if provided
-    let filteredRecords = operationalRecords;
-    if (dateFilter) {
-      const startDate = new Date(dateFilter.year, dateFilter.month ? dateFilter.month - 1 : 0, 1);
-      const endDate = dateFilter.month ? new Date(dateFilter.year, dateFilter.month, 0, 23, 59, 59, 999) : new Date(dateFilter.year, 11, 31, 23, 59, 59, 999);
-
-      filteredRecords = operationalRecords.filter((record) => {
-        const recordDate = new Date(record.date);
-        return recordDate >= startDate && recordDate <= endDate;
-      });
-    }
-
-    // Get KPI points for PICKET and THEMATIC
-    const picketKPI = await KPIRepository.findKPIByCode("PICKET");
-    const thematicKPI = await KPIRepository.findKPIByCode("THEMATIC");
-
-    const picketPoint = picketKPI?.point || 0;
-    const thematicPoint = thematicKPI?.point || 0;
-
-    // Count by schedule type
-    let picketCount = 0;
-    let thematicCount = 0;
-
-    filteredRecords.forEach((record) => {
-      if (record.type === ScheduleType.picket) {
-        picketCount++;
-      } else if (record.type === ScheduleType.thematic) {
-        thematicCount++;
-      }
-    });
-
-    // Fetch user data
-    const user = await userRepository.findUserById(userId);
-    const userName = user?.name || "Unknown User";
-
-    const picketPoints = picketCount * picketPoint;
-    const thematicPoints = thematicCount * thematicPoint;
-    const totalPoints = picketPoints + thematicPoints;
-
-    return {
-      userId,
-      userName,
-      total: picketCount + thematicCount,
-      totalPoints,
-      operationalDetail: {
-        picket: {
-          count: picketCount,
-          code: "PICKET",
-          point: picketPoint,
-          total: picketPoints,
-        },
-        thematic: {
-          count: thematicCount,
-          code: "THEMATIC",
-          point: thematicPoint,
-          total: thematicPoints,
-        },
-      },
-    };
-  },
-
-  // Branding Points Summary
-  getBrandingPointsSummary: async (dateFilter?: { year: number; month?: number }) => {
-    // Fetch all approved branding records
-    const approvedBrandings = await brandingRepository.findBrandingsByFilter({ status: brandingStatus.Approved }, dateFilter ? { year: dateFilter.year, month: dateFilter.month || 1 } : undefined);
-
-    // Handle date filtering if only year is provided
-    let filteredBrandings = approvedBrandings;
-    if (dateFilter && !dateFilter.month) {
-      const startDate = new Date(dateFilter.year, 0, 1);
-      const endDate = new Date(dateFilter.year, 11, 31, 23, 59, 59, 999);
-      filteredBrandings = approvedBrandings.filter((branding) => {
-        if (!branding.createdAt) return false;
-        const brandingDate = new Date(branding.createdAt);
-        return brandingDate >= startDate && brandingDate <= endDate;
-      });
-    }
-
-    // Group by userId
-    const userMap = new Map<string, IBranding[]>();
-    filteredBrandings.forEach((branding) => {
-      if (!branding.userId) return;
-      const userId = (branding.userId as any)?._id?.toString() || branding.userId.toString();
-      if (!userMap.has(userId)) {
-        userMap.set(userId, []);
-      }
-      userMap.get(userId)!.push(branding);
-    });
-
-    // Get KPI point for CONTENT code
-    const contentKPI = await KPIRepository.findKPIByCode("CONTENT");
-    const contentPoint = contentKPI?.point || 0;
-
-    // Get all active users
-    const allUsers = await userRepository.findUsersByFilter({ status: Status.active });
-
-    // Build summary for all users
-    const summary = allUsers.map((user) => {
-      const userId = user._id?.toString() || "";
-      const brandings = userMap.get(userId) || [];
-      const count = brandings.length;
-      const totalPoints = count * contentPoint;
-
-      return {
-        userId,
-        userName: user.name,
-        count,
-        totalPoints,
-      };
-    });
-
-    return summary;
-  },
-
-  getMyBrandingPointsSummary: async (userId: string, dateFilter?: { year: number; month?: number }) => {
-    // Fetch user's approved branding records
-    const approvedBrandings = await brandingRepository.findMyBrandings(userId, dateFilter?.year, dateFilter?.month);
-
-    // Filter by approved status
-    const filteredBrandings = approvedBrandings.filter((branding) => branding.status === brandingStatus.Approved);
-
-    // Get KPI point for CONTENT code
-    const contentKPI = await KPIRepository.findKPIByCode("CONTENT");
-    const contentPoint = contentKPI?.point || 0;
-
-    // Calculate total
-    const count = filteredBrandings.length;
-    const totalPoints = count * contentPoint;
-
-    // Fetch user data
-    const user = await userRepository.findUserById(userId);
-    const userName = user?.name || "Unknown User";
-
-    return {
-      userId,
-      userName,
-      count,
-      totalPoints,
-    };
-  },
-
-  // Competition Points Summary
-  getCompetitionPointsSummary: async (dateFilter?: { year: number; month?: number }) => {
-    // Fetch all approved competition records
-    const approvedCompetitions = await competitionRepository.findCompetitionsByFilter(
-      { status: CompetitionStatus.Approved },
-      dateFilter ? { year: dateFilter.year, month: dateFilter.month || 1 } : undefined,
+    const grand_total = parseFloat(
+      String(Math.floor(categories.reduce((sum, c) => sum + c.total_point, 0) * 10) / 10)
     );
 
-    // Handle date filtering if only year is provided
-    let filteredCompetitions = approvedCompetitions;
-    if (dateFilter && !dateFilter.month) {
-      const startDate = new Date(dateFilter.year, 0, 1);
-      const endDate = new Date(dateFilter.year, 11, 31, 23, 59, 59, 999);
-      filteredCompetitions = approvedCompetitions.filter((competition) => {
-        if (!competition.createdAt) return false;
-        const competitionDate = new Date(competition.createdAt);
-        return competitionDate >= startDate && competitionDate <= endDate;
-      });
-    }
-
-    // Group by userId
-    const userMap = new Map<string, ICompetition[]>();
-    filteredCompetitions.forEach((competition) => {
-      if (!competition.userId) return;
-      const userId = (competition.userId as any)?._id?.toString() || competition.userId.toString();
-      if (!userMap.has(userId)) {
-        userMap.set(userId, []);
-      }
-      userMap.get(userId)!.push(competition);
-    });
-
-    // Get KPI point for INFORMATION code
-    const informationKPI = await KPIRepository.findKPIByCode("INFORMATION");
-    const informationPoint = informationKPI?.point || 0;
-
-    // Get all active users
-    const allUsers = await userRepository.findUsersByFilter({ status: Status.active });
-
-    // Build summary for all users
-    const summary = allUsers.map((user) => {
-      const userId = user._id?.toString() || "";
-      const competitions = userMap.get(userId) || [];
-      const count = competitions.length;
-      const totalPoints = count * informationPoint;
-
-      return {
-        userId,
-        userName: user.name,
-        count,
-        totalPoints,
-      };
-    });
-
-    return summary;
-  },
-
-  getMyCompetitionPointsSummary: async (userId: string, dateFilter?: { year: number; month?: number }) => {
-    const approvedCompetitions = await competitionRepository.findMyCompetitions(userId, dateFilter?.year, dateFilter?.month);
-    const filteredCompetitions = approvedCompetitions.filter((competition) => competition.status === CompetitionStatus.Approved);
-
-    // Get KPI point for INFORMATION code
-    const informationKPI = await KPIRepository.findKPIByCode("INFORMATION");
-    const informationPoint = informationKPI?.point || 0;
-
-    // Calculate total
-    const count = filteredCompetitions.length;
-    const totalPoints = count * informationPoint;
-
-    // Fetch user data
-    const user = await userRepository.findUserById(userId);
-    const userName = user?.name || "Unknown User";
-
     return {
-      userId,
-      userName,
-      count,
-      totalPoints,
+      userId: userObjectId,
+      name: user.name,
+      image: (user as any).image ?? null,
+      month: dateFilter?.month ?? new Date().getMonth() + 1,
+      year: dateFilter?.year ?? new Date().getFullYear(),
+      categories,
+      grand_total,
     };
   },
 
-  // Total Points Summary - All Users
-  getTotalPointsSummary: async (dateFilter?: { year: number; month?: number }) => {
-    const [researchData, attendanceData, scheduleData, brandingData, competitionData] = await Promise.all([
-      KPICountService.getResearchPointsSummary(dateFilter),
-      KPICountService.getAttendancePointsSummary(dateFilter),
-      KPICountService.getSchedulePointsSummary(dateFilter),
-      KPICountService.getBrandingPointsSummary(dateFilter),
-      KPICountService.getCompetitionPointsSummary(dateFilter),
-    ]);
+  getAllKPISummary: async (dateFilter?: { year: number; month?: number }) => {
+    const allUsers = await userRepository.findAllUsers();
+    const summaries: any[] = [];
 
-    // Create a map to aggregate data by userId
-    const userTotalsMap = new Map<string, any>();
-
-    // Process research data
-    if (researchData.byUser) {
-      researchData.byUser.forEach((user) => {
-        if (!userTotalsMap.has(user.userId)) {
-          userTotalsMap.set(user.userId, {
-            userId: user.userId,
-            userName: user.userName,
-            totalPoints: 0,
-          });
-        }
-        const userData = userTotalsMap.get(user.userId)!;
-        userData.totalPoints += user.totalPoints;
-        userData.research = {
-          totalPoints: user.totalPoints,
-          byCategory: user.byCategory,
-        };
-      });
+    for (const user of allUsers) {
+      const summary = await KPICountService.getMyKPISummary(user._id.toString(), dateFilter);
+      summaries.push(summary);
     }
 
-    // Process attendance data
-    if (attendanceData.byUser) {
-      attendanceData.byUser.forEach((user) => {
-        if (!userTotalsMap.has(user.userId)) {
-          userTotalsMap.set(user.userId, {
-            userId: user.userId,
-            userName: user.userName,
-            totalPoints: 0,
-          });
-        }
-        const userData = userTotalsMap.get(user.userId)!;
-        userData.totalPoints += user.totalPoints;
-        userData.attendance = {
-          totalPoints: user.totalPoints,
-          detail: user.detail,
-        };
-      });
-    }
-
-    // Process schedule/operational data
-    if (scheduleData.byUser) {
-      scheduleData.byUser.forEach((user) => {
-        if (!userTotalsMap.has(user.userId)) {
-          userTotalsMap.set(user.userId, {
-            userId: user.userId,
-            userName: user.userName,
-            totalPoints: 0,
-          });
-        }
-        const userData = userTotalsMap.get(user.userId)!;
-        userData.totalPoints += user.totalPoints;
-        userData.operational = {
-          totalPoints: user.totalPoints,
-          operationalDetail: user.operationalDetail,
-        };
-      });
-    }
-
-    // Process branding data
-    if (Array.isArray(brandingData)) {
-      brandingData.forEach((user) => {
-        if (!userTotalsMap.has(user.userId)) {
-          userTotalsMap.set(user.userId, {
-            userId: user.userId,
-            userName: user.userName,
-            totalPoints: 0,
-          });
-        }
-        const userData = userTotalsMap.get(user.userId)!;
-        userData.totalPoints += user.totalPoints;
-        userData.branding = {
-          count: user.count,
-          totalPoints: user.totalPoints,
-        };
-      });
-    }
-
-    // Process competition data
-    if (Array.isArray(competitionData)) {
-      competitionData.forEach((user) => {
-        if (!userTotalsMap.has(user.userId)) {
-          userTotalsMap.set(user.userId, {
-            userId: user.userId,
-            userName: user.userName,
-            totalPoints: 0,
-          });
-        }
-        const userData = userTotalsMap.get(user.userId)!;
-        userData.totalPoints += user.totalPoints;
-        userData.competition = {
-          count: user.count,
-          totalPoints: user.totalPoints,
-        };
-      });
-    }
-
-    // Convert map to sorted array by totalPoints descending
-    const summary = Array.from(userTotalsMap.values()).sort((a, b) => b.totalPoints - a.totalPoints);
-
-    return {
-      totalUsers: summary.length,
-      byUser: summary,
-    };
+    return summaries.sort((a, b) => b.grand_total - a.grand_total);
   },
 
-  getMyTotalPointsSummary: async (userId: string, dateFilter?: { year: number; month?: number }) => {
-    // Get all KPI summaries for specific user
-    const [researchData, attendanceData, scheduleData, brandingData, competitionData] = await Promise.all([
-      KPICountService.getMyResearchPointsSummary(userId, dateFilter),
-      KPICountService.getMyAttendancePointsSummary(userId, dateFilter),
-      KPICountService.getMySchedulePointsSummary(userId, dateFilter),
-      KPICountService.getMyBrandingPointsSummary(userId, dateFilter),
-      KPICountService.getMyCompetitionPointsSummary(userId, dateFilter),
-    ]);
+  // GET /kpi/statistic?year=2026
+  getKpiStatistic: async (year: number) => {
+    const monthlyStats: any[] = [];
 
-    // Get user name
-    const user = await userRepository.findUserById(userId);
-    const userName = user?.name || "Unknown User";
+    for (let month = 1; month <= 12; month++) {
+      const startDate = new Date(year, month - 1, 1);
+      const endDate = new Date(year, month, 0, 23, 59, 59, 999);
 
-    // Calculate total points
-    const researchTotal = researchData.totalPoints || 0;
-    const attendanceTotal = attendanceData.totalPoints || 0;
-    const scheduleTotal = scheduleData.totalPoints || 0;
-    const brandingTotal = brandingData.totalPoints || 0;
-    const competitionTotal = competitionData.totalPoints || 0;
+      const [researchRecords, attendanceRecords] = await Promise.all([
+        researchRepository.findResearchWithFilters({
+          status: { $ne: null } as any,
+          date: { year, month },
+        }),
+        attendanceRepository.findAll({
+          status: attendanceStatus.PRESENT,
+          createdAt: { $gte: startDate, $lte: endDate } as any,
+        }),
+      ]);
 
-    const totalPoints = researchTotal + attendanceTotal + scheduleTotal + brandingTotal + competitionTotal;
+      const monthName = new Date(year, month - 1).toLocaleString("id-ID", { month: "long" });
 
-    return {
-      userId,
-      userName,
-      totalPoints,
-      breakdown: {
-        research: {
-          totalPoints: researchTotal,
-          byCategory: researchData.byCategory,
-        },
-        attendance: {
-          totalPoints: attendanceTotal,
-          detail: attendanceData.detail,
-        },
-        operational: {
-          totalPoints: scheduleTotal,
-          operationalDetail: scheduleData.operationalDetail,
-        },
-        branding: {
-          count: brandingData.count,
-          totalPoints: brandingTotal,
-        },
-        competition: {
-          count: competitionData.count,
-          totalPoints: competitionTotal,
-        },
-      },
-    };
-  },
-
-  // Comprehensive Summary - All activities for specific user
-  getMyComprehensiveSummary: async (userId: string, dateFilter?: { year: number; month?: number }) => {
-    // Get all KPI summaries for specific user
-    const [researchData, attendanceData, scheduleData, brandingData, competitionData] = await Promise.all([
-      KPICountService.getMyResearchPointsSummary(userId, dateFilter),
-      KPICountService.getMyAttendancePointsSummary(userId, dateFilter),
-      KPICountService.getMySchedulePointsSummary(userId, dateFilter),
-      KPICountService.getMyBrandingPointsSummary(userId, dateFilter),
-      KPICountService.getMyCompetitionPointsSummary(userId, dateFilter),
-    ]);
-
-    // Get user name
-    const user = await userRepository.findUserById(userId);
-    const userName = user?.name || "Unknown User";
-
-    // Calculate totals
-    const researchTotal = researchData.totalPoints || 0;
-    const attendanceTotal = attendanceData.totalPoints || 0;
-    const scheduleTotal = scheduleData.totalPoints || 0;
-    const brandingTotal = brandingData.totalPoints || 0;
-    const competitionTotal = competitionData.totalPoints || 0;
-
-    const allTotal = researchTotal + attendanceTotal + scheduleTotal + brandingTotal + competitionTotal;
-
-    // Get KPI points for point per item
-    const cocreationKPI = await KPIRepository.findKPIByCode("COCREATION");
-    const workshopKPI = await KPIRepository.findKPIByCode("WORKSHOP");
-    const picketKPI = await KPIRepository.findKPIByCode("PICKET");
-    const attendanceKPI = await KPIRepository.findKPIByCode("ATTENDANCE");
-
-    const cocreationPoint = cocreationKPI?.point || 0;
-    const workshopPoint = workshopKPI?.point || 0;
-    const picketPoint = picketKPI?.point || 0;
-    const attendancePoint = attendanceKPI?.point || 0;
-
-    // Calculate total activities count
-    const researchCount = (researchData.byCategory?.personal?.count || 0) + (researchData.byCategory?.product?.count || 0) + (researchData.byCategory?.workshop?.count || 0);
-    const operationalCount = (scheduleData.operationalDetail?.picket?.count || 0) + (scheduleData.operationalDetail?.thematic?.count || 0);
-    const attendanceCount = attendanceData.detail?.present?.count || 0;
-    const brandingCount = brandingData.count || 0;
-    const competitionCount = competitionData.count || 0;
-
-    const year = dateFilter?.year || new Date().getFullYear();
-    const month = dateFilter?.month || new Date().getMonth() + 1;
-
-    return {
-      userId,
-      userName,
-      period: {
-        year,
+      monthlyStats.push({
         month,
-      },
-      summary: {
-        research: {
-          count: researchCount,
-          totalPoints: researchTotal,
-          personal: {
-            count: researchData.byCategory?.personal?.count || 0,
-            totalPoints: researchData.byCategory?.personal?.total || 0,
-          },
-          product: {
-            count: researchData.byCategory?.product?.count || 0,
-            totalPoints: researchData.byCategory?.product?.total || 0,
-          },
-          workshop: {
-            count: researchData.byCategory?.workshop?.count || 0,
-            totalPoints: researchData.byCategory?.workshop?.total || 0,
-          },
-        },
-        operational: {
-          count: operationalCount,
-          totalPoints: scheduleTotal,
-          picket: {
-            count: scheduleData.operationalDetail?.picket?.count || 0,
-            pointPerItem: picketPoint,
-            totalPoints: scheduleData.operationalDetail?.picket?.total || 0,
-          },
-          thematic: {
-            count: scheduleData.operationalDetail?.thematic?.count || 0,
-            pointPerItem: picketPoint, // Assuming same point as picket
-            totalPoints: scheduleData.operationalDetail?.thematic?.total || 0,
-          },
-        },
-        attendance: {
-          count: attendanceCount,
-          totalPoints: attendanceTotal,
-          present: {
-            count: attendanceData.detail?.present?.count || 0,
-            pointPerItem: attendancePoint,
-            totalPoints: attendanceData.detail?.present?.total || 0,
-          },
-        },
-        branding: {
-          count: brandingCount,
-          totalPoints: brandingTotal,
-        },
-        competition: {
-          count: competitionCount,
-          totalPoints: competitionTotal,
-        },
-        grandTotalPoints: allTotal,
-      },
+        monthName,
+        totalResearch: researchRecords.length,
+        totalAttendance: attendanceRecords.length,
+      });
+    }
+
+    return { year, data: monthlyStats };
+  },
+
+  // GET /kpi/me/operational?year=2026&month=6 — leaderboard ranking
+  getOperationalLeaderboard: async (dateFilter?: { year: number; month?: number }) => {
+    const summaries = await KPICountService.getAllKPISummary(dateFilter);
+
+    return summaries.map((s, index) => ({
+      rank: index + 1,
+      name: s.name,
+      userId: s.userId,
+      point: s.grand_total,
+    }));
+  },
+
+  getMyOperationalSummary: async (userId: string, dateFilter?: { year: number; month?: number }) => {
+    const userObjectId = new Types.ObjectId(userId);
+    const masters: any[] = await KPIRepository.findAllMasters();
+    const operationalMaster = masters.find((m) => m.kementerian.toLowerCase() === "operational");
+    const details: any[] = operationalMaster ? await KPIRepository.findDetailsByMasterId(operationalMaster._id.toString()) : [];
+    const findDetail = (name: string) => details.find((d) => d.kpi_item.toLowerCase() === name);
+
+    const attendanceDetail = findDetail("attendance");
+    const picketDetail = findDetail("picket");
+    const thematicDetail = findDetail("thematic");
+
+    const dateRange = buildDateFilter(dateFilter);
+    const startDate = dateFilter ? new Date(dateFilter.year, (dateFilter.month ?? 1) - 1, 1) : undefined;
+    const endDate = dateFilter ? new Date(dateFilter.year, dateFilter.month ?? 12, 0, 23, 59, 59, 999) : undefined;
+
+    const countAttendance = attendanceDetail ? (await attendanceRepository.findAll({
+      userId: userObjectId,
+      id_kpi_detail: attendanceDetail._id,
+      status: attendanceStatus.PRESENT,
+      checkOut: { $ne: null } as any,
+      ...(dateRange && { createdAt: dateRange }),
+    })).length : 0;
+
+    const countPicket = picketDetail ? (await operationalRecordRepository.findRecordsWithFilters({
+      userId, id_kpi_detail: picketDetail._id.toString(), type: ScheduleType.picket, startDate, endDate,
+    })).length : 0;
+
+    const countThematic = thematicDetail ? (await operationalRecordRepository.findRecordsWithFilters({
+      userId, id_kpi_detail: thematicDetail._id.toString(), type: ScheduleType.thematic, startDate, endDate,
+    })).length : 0;
+
+    const totalAttendance = attendanceDetail ? hitungPoint(attendanceDetail.point, attendanceDetail.max_activity, countAttendance, attendanceDetail.label) : 0;
+    const totalPicket = picketDetail ? hitungPoint(picketDetail.point, picketDetail.max_activity, countPicket, picketDetail.label) : 0;
+    const totalThematic = thematicDetail ? hitungPoint(thematicDetail.point, thematicDetail.max_activity, countThematic, thematicDetail.label) : 0;
+
+    return {
+      totalAttendance: countAttendance,
+      totalPicket: countPicket,
+      totalTematik: countThematic,
+      totalPoint: Math.floor((totalAttendance + totalPicket + totalThematic) * 10) / 10,
+      year: dateFilter?.year ?? new Date().getFullYear(),
+      month: dateFilter?.month ?? new Date().getMonth() + 1,
     };
+  },
+
+  getMyResearchSummary: async (userId: string, dateFilter?: { year: number; month?: number }) => {
+    const masters: any[] = await KPIRepository.findAllMasters();
+    const researchMaster = masters.find((m) => m.kementerian.toLowerCase() === "research");
+    if (!researchMaster) return { totalApproved: 0, totalPoint: 0 };
+
+    const details: any[] = await KPIRepository.findDetailsByMasterId(researchMaster._id.toString());
+    let totalApproved = 0;
+    let totalPoint = 0;
+
+    for (const detail of details) {
+      const records = await researchRepository.findResearchWithFilters({
+        userId,
+        id_kpi_detail: detail._id.toString(),
+        status: { $ne: null } as any,
+        ...(dateFilter && { date: dateFilter }),
+      });
+      totalApproved += records.length;
+      const rawTotal = records.reduce((sum: number, r: any) => {
+        return sum + hitungPointRange(detail.point, detail.max_activity, r.status || 0, detail.label);
+      }, 0);
+      totalPoint += rawTotal;
+    }
+
+    return {
+      totalApproved,
+      totalPoint: Math.floor(totalPoint * 10) / 10,
+    };
+  },
+
+  getAllResearchSummary: async (dateFilter?: { year: number; month?: number }) => {
+    const allUsers = await userRepository.findAllUsers();
+    const masters: any[] = await KPIRepository.findAllMasters();
+    const researchMaster = masters.find((m) => m.kementerian.toLowerCase() === "research");
+    const details: any[] = researchMaster ? await KPIRepository.findDetailsByMasterId(researchMaster._id.toString()) : [];
+
+    const results = [];
+    for (const user of allUsers) {
+      const userId = user._id.toString();
+      const byCategory: Record<string, { count: number; total: number }> = {};
+      let totalPoints = 0;
+
+      for (const detail of details) {
+        const records = await researchRepository.findResearchWithFilters({
+          userId,
+          id_kpi_detail: detail._id.toString(),
+          status: { $ne: null } as any,
+          ...(dateFilter && { date: dateFilter }),
+        });
+        const count = records.length;
+        const raw = records.reduce((sum: number, r: any) => {
+          return sum + hitungPointRange(detail.point, detail.max_activity, r.status || 0, detail.label);
+        }, 0);
+        const total = Math.floor(raw * 10) / 10;
+        byCategory[detail.kpi_item] = { count, total };
+        totalPoints += total;
+      }
+
+      results.push({
+        userId: user._id,
+        userName: user.name,
+        totalPoints: Math.floor(totalPoints * 10) / 10,
+        byCategory,
+        year: dateFilter?.year ?? new Date().getFullYear(),
+        month: dateFilter?.month ?? new Date().getMonth() + 1,
+      });
+    }
+
+    return results.sort((a, b) => b.totalPoints - a.totalPoints);
+  },
+
+  getAllOperationalBreakdown: async (dateFilter?: { year: number; month?: number }) => {
+    const allUsers = await userRepository.findAllUsers();
+    const masters: any[] = await KPIRepository.findAllMasters();
+    const operationalMaster = masters.find((m) => m.kementerian.toLowerCase() === "operational");
+    const details: any[] = operationalMaster ? await KPIRepository.findDetailsByMasterId(operationalMaster._id.toString()) : [];
+    const findDetail = (name: string) => details.find((d) => d.kpi_item.toLowerCase() === name);
+
+    const attendanceDetail = findDetail("attendance");
+    const picketDetail = findDetail("picket");
+    const thematicDetail = findDetail("thematic");
+
+    const dateRange = buildDateFilter(dateFilter);
+    const startDate = dateFilter ? new Date(dateFilter.year, (dateFilter.month ?? 1) - 1, 1) : undefined;
+    const endDate = dateFilter ? new Date(dateFilter.year, dateFilter.month ?? 12, 0, 23, 59, 59, 999) : undefined;
+
+    const buildCategory = async (userId: string, userObjectId: Types.ObjectId, detail: any, type?: ScheduleType) => {
+      if (!detail) {
+        return { count: 0, code: "", point: 0, total: 0 };
+      }
+
+      let count = 0;
+      if (type) {
+        const records = await operationalRecordRepository.findRecordsWithFilters({
+          userId,
+          id_kpi_detail: detail._id.toString(),
+          type,
+          startDate,
+          endDate,
+        });
+        count = records.length;
+      } else {
+        const records = await attendanceRepository.findAll({
+          userId: userObjectId,
+          id_kpi_detail: detail._id,
+          status: attendanceStatus.PRESENT,
+          checkOut: { $ne: null } as any,
+          ...(dateRange && { createdAt: dateRange }),
+        });
+        count = records.length;
+      }
+
+      const total = hitungPoint(detail.point, detail.max_activity, count, detail.label);
+      return { count, code: detail.kpi_item, point: detail.point, total };
+    };
+
+    const results = [];
+    for (const user of allUsers) {
+      const userId = user._id.toString();
+      const userObjectId = new Types.ObjectId(userId);
+
+      const attendance = await buildCategory(userId, userObjectId, attendanceDetail);
+      const picket = await buildCategory(userId, userObjectId, picketDetail, ScheduleType.picket);
+      const thematic = await buildCategory(userId, userObjectId, thematicDetail, ScheduleType.thematic);
+
+      const totalPoints = parseFloat(String(Math.floor((attendance.total + picket.total + thematic.total) * 10) / 10));
+
+      results.push({
+        userId: userObjectId,
+        userName: user.name,
+        totalPoints,
+        operationalDetail: { attendance, picket, thematic },
+        year: dateFilter?.year ?? new Date().getFullYear(),
+        month: dateFilter?.month ?? new Date().getMonth() + 1,
+      });
+    }
+
+    return results.sort((a, b) => b.totalPoints - a.totalPoints);
   },
 };
 

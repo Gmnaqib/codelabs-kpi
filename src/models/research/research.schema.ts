@@ -1,14 +1,15 @@
 import { Schema, model } from "mongoose";
-import IResearch, { statusResearch, CategoryType, progressStatus } from "./research.interface";
+import IResearch, { RESEARCH_STATUS_VALUES, progressStatus } from "./research.interface";
 
 const researchSchema = new Schema<IResearch>(
   {
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
     week: { type: Number, required: true },
-    category: {
-      type: String,
-      enum: Object.values(CategoryType),
-      required: true,
+    id_kpi_detail: {
+      type: Schema.Types.ObjectId,
+      ref: "KPIDetail",
+      required: false,
+      default: null,
     },
     title: { type: String, required: true },
     link: { type: String, required: true },
@@ -19,9 +20,12 @@ const researchSchema = new Schema<IResearch>(
     },
     challenge: { type: String, required: false },
     status: {
-      type: String,
-      enum: Object.values(statusResearch),
-      default: "pending",
+      type: Number,
+      enum: RESEARCH_STATUS_VALUES,
+      default: null,
+      min: 0,
+      max: 5,
+      required: false,
     },
   },
   { timestamps: true },

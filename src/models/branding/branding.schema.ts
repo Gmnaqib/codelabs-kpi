@@ -1,41 +1,30 @@
 import { Schema, model } from "mongoose";
 import mongoose from "mongoose";
-import IBranding from "./branding.interface";
-import { brandingStatus, researchCategory, brandingLevel } from "./branding.interface";
+import IBranding, { BRANDING_STATUS_VALUES, researchCategory, brandingLevel } from "./branding.interface";
 
 const brandingSchema = new Schema<IBranding>(
   {
-    userId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
-    name: {
-      type: String,
-      required: true,
-    },
-    description: {
-      type: String,
-      required: true,
-    },
-    link: {
-      type: String,
-      required: true,
-    },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    id_kpi_detail: { type: mongoose.Schema.Types.ObjectId, ref: "KPIDetail", default: null },
+    name: { type: String, required: true },
+    description: { type: String, required: true },
+    link: { type: String, required: true },
     status: {
-      type: String,
-      enum: [brandingStatus.Approved, brandingStatus.Rejected, brandingStatus.Pending],
-      default: brandingStatus.Pending,
-      required: true,
+      type: Number,
+      enum: BRANDING_STATUS_VALUES,
+      default: null,
+      min: 0,
+      max: 5,
+      required: false,
     },
     research: {
       type: String,
-      enum: [researchCategory.website, researchCategory.mobile, researchCategory.game, researchCategory.ui, researchCategory.data, researchCategory.other],
+      enum: Object.values(researchCategory),
       required: true,
     },
     level: {
       type: String,
-      enum: [brandingLevel.Beginner, brandingLevel.Intermediate, brandingLevel.Advanced],
+      enum: Object.values(brandingLevel),
       required: true,
     },
   },
@@ -43,5 +32,4 @@ const brandingSchema = new Schema<IBranding>(
 );
 
 const Branding = model<IBranding>("Branding", brandingSchema);
-
 export default Branding;

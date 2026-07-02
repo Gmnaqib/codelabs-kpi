@@ -6,6 +6,7 @@ import operationalRecordService from "./operationalRecord.service";
 import IAttendance, { attendanceStatus, approvalStatus } from "../models/attendance/attendance.Interface";
 import { Status } from "../models/user/user.interface";
 import { ScheduleType } from "../models/schedule/schedule.interface";
+import { resolveKpiDetailId } from "../helper/kpi.detail.validator";
 import { Types } from "mongoose";
 import dateHelper from "../helper/dateHelper";
 
@@ -34,13 +35,16 @@ const convertAttendanceToIndonesiaTime = (record: any) => {
 };
 
 const attendanceService = {
-  checkIn: async (userId: Types.ObjectId, deviceId: { device_id: string }, reason?: string): Promise<IAttendance> => {
-    const validationResult = await attendanceValidate.checkIn(userId, deviceId, reason);
+  checkIn: async (userId: Types.ObjectId, clientIp: string, reason?: string): Promise<IAttendance> => {
+    const validationResult = await attendanceValidate.checkIn(userId, clientIp, reason);
     const userObjectId = new Types.ObjectId(userId);
+    // FE tidak mengirim id_kpi_detail saat checkin, jadi dicocokkan otomatis dari kpi_item "attendance" di kementerian operational
+    const id_kpi_detail = await resolveKpiDetailId("operational", "attendance");
 
     if (validationResult.isLateCheckIn) {
       const record = await attendanceRepository.create({
         userId: userObjectId,
+        id_kpi_detail,
         status: attendanceStatus.PRESENT,
         checkIn: new Date(),
         checkOut: null,
@@ -51,6 +55,7 @@ const attendanceService = {
 
     const record = await attendanceRepository.create({
       userId: userObjectId,
+      id_kpi_detail,
       status: attendanceStatus.PRESENT,
       checkIn: new Date(),
       checkOut: null,
@@ -58,10 +63,10 @@ const attendanceService = {
     return convertAttendanceToIndonesiaTime(record);
   },
 
-  checkOut: async (userId: Types.ObjectId, deviceId: { device_id: string }): Promise<IAttendance> => {
+  checkOut: async (userId: Types.ObjectId, clientIp: string): Promise<IAttendance> => {
     const userObjectId = new Types.ObjectId(userId);
 
-    await attendanceValidate.checkOut(userObjectId, deviceId);
+    await attendanceValidate.checkOut(userObjectId, clientIp);
 
     const startOfDay = dateHelper.getStartOfDayWIB();
     const endOfDay = dateHelper.getEndOfDayWIB();
@@ -88,7 +93,7 @@ const attendanceService = {
         userId: userObjectId,
         type: ScheduleType.thematic,
         date: new Date(),
-      });
+      } as any);
     } catch (error) {
       console.log("Operational record creation skipped:", (error as any).message);
     }
@@ -141,6 +146,33 @@ const attendanceService = {
     searchLeaveRequest!.approved_by = reviewerUserId;
     searchLeaveRequest!.approval_status = approvalStatus;
     await searchLeaveRequest!.save();
+  },
+
+  checkinByAdmin: async (targetUserId: Types.ObjectId): Promise<IAttendance> => {
+    const userObjectId = new Types.ObjectId(targetUserId);
+    const startOfDay = dateHelper.getStartOfDayWIB();
+    const endOfDay = dateHelper.getEndOfDayWIB();
+
+    const existing = await attendanceRepository.findOne({
+      userId: userObjectId,
+      checkIn: { $gte: startOfDay, $lt: endOfDay },
+    });
+
+    if (existing) {
+      throw new Error("User has already checked in today");
+    }
+
+    const id_kpi_detail = await resolveKpiDetailId("operational", "attendance");
+
+    const record = await attendanceRepository.create({
+      userId: userObjectId,
+      id_kpi_detail,
+      status: attendanceStatus.PRESENT,
+      checkIn: new Date(),
+      checkOut: null,
+    });
+
+    return convertAttendanceToIndonesiaTime(record);
   },
 
   getAttendance: async (year?: number, month?: number, day?: number): Promise<IAttendance[]> => {
@@ -555,13 +587,41 @@ const attendanceService = {
         userId: targetUserId,
         type: ScheduleType.thematic,
         date: new Date(),
-      });
+      } as any);
     } catch (error) {
       console.log("Operational record creation skipped:", (error as any).message);
       // Jangan throw error jika operational record gagal, tetap return attendance result
     }
 
     return convertAttendanceToIndonesiaTime(result);
+  },
+
+  checkOutAllByMinister: async (reasonCheckOut: string): Promise<{ checkedOut: number }> => {
+    if (!reasonCheckOut || reasonCheckOut.trim() === "") {
+      throw new Error("Reason for checkout is required");
+    }
+
+    await attendanceValidate.checkOutByMinister(new Types.ObjectId());
+
+    const startOfDay = dateHelper.getStartOfDayWIB();
+    const endOfDay = dateHelper.getEndOfDayWIB();
+
+    const pending = await attendanceRepository.findAll({
+      checkIn: { $gte: startOfDay, $lt: endOfDay } as any,
+      checkOut: null as any,
+    });
+
+    const toUpdate = pending.filter((a) => a.checkIn && !a.checkOut);
+
+    await Promise.all(
+      toUpdate.map(async (a) => {
+        a.checkOut = new Date();
+        a.reasonCheckOut = reasonCheckOut;
+        await a.save();
+      })
+    );
+
+    return { checkedOut: toUpdate.length };
   },
 
   submitLeaveByOperational: async (
