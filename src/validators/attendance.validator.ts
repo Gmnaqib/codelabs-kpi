@@ -1,8 +1,8 @@
 import attendanceRepository from "../repository/attendance.repository";
 import { attendanceStatus } from "../models/attendance/attendance.Interface";
-import userRepository from "../repository/user.repository";
+// import userRepository from "../repository/user.repository";
 import settingRepository from "../repository/setting.respository";
-import mikrotikService from "../services/mikrotik.service";
+// import mikrotikService from "../services/mikrotik.service";
 import timeSettingService from "../services/timeSetting.service";
 import dateHelper from "../helper/dateHelper";
 import { DateTime } from "luxon";
@@ -19,32 +19,30 @@ const getDayCode = (): "WEEKDAY" | "SATURDAY" => {
   return "WEEKDAY";
 };
 
-// Office devices share one public NAT IP once traffic leaves the LAN, so a per-device
-// IP-to-MAC lookup is impossible for those requests — fall back to checking whether the
-// user's registered MAC currently has a DHCP lease (same idea as the loopback/dev case).
-const OFFICE_PUBLIC_IPS = (process.env.CLL_WIFI_IP ?? "")
-  .split(",")
-  .map((ip) => ip.trim())
-  .filter(Boolean);
-
-const isKnownGatewayIp = (clientIp: string): boolean => {
-  return clientIp === "127.0.0.1" || clientIp === "::1" || OFFICE_PUBLIC_IPS.includes(clientIp);
-};
-
-const assertDeviceOnNetwork = async (clientIp: string, userMac: string): Promise<void> => {
-  if (isKnownGatewayIp(clientIp)) {
-    const leases = await mikrotikService.getDhcpLeases();
-    const onNetwork = leases.some((lease: any) => {
-      const mac = (lease["active-mac-address"] || lease["mac-address"] || "").toUpperCase().replace(/-/g, ":");
-      return mac === userMac.toUpperCase();
-    });
-    if (!onNetwork) throw new Error("Device not found in MikroTik DHCP lease");
-  } else {
-    const detectedMac = await mikrotikService.getMacAddressByIp(clientIp);
-    if (!detectedMac) throw new Error("Device not found in MikroTik DHCP lease");
-    if (detectedMac !== userMac) throw new Error("Device not registered");
-  }
-};
+// [DISABLED] Network/MAC validation - re-enable when MikroTik is accessible from VPS
+// const OFFICE_PUBLIC_IPS = (process.env.CLL_WIFI_IP ?? "")
+//   .split(",")
+//   .map((ip) => ip.trim())
+//   .filter(Boolean);
+//
+// const isKnownGatewayIp = (clientIp: string): boolean => {
+//   return clientIp === "127.0.0.1" || clientIp === "::1" || OFFICE_PUBLIC_IPS.includes(clientIp);
+// };
+//
+// const assertDeviceOnNetwork = async (clientIp: string, userMac: string): Promise<void> => {
+//   if (isKnownGatewayIp(clientIp)) {
+//     const leases = await mikrotikService.getDhcpLeases();
+//     const onNetwork = leases.some((lease: any) => {
+//       const mac = (lease["active-mac-address"] || lease["mac-address"] || "").toUpperCase().replace(/-/g, ":");
+//       return mac === userMac.toUpperCase();
+//     });
+//     if (!onNetwork) throw new Error("Device not found in MikroTik DHCP lease");
+//   } else {
+//     const detectedMac = await mikrotikService.getMacAddressByIp(clientIp);
+//     if (!detectedMac) throw new Error("Device not found in MikroTik DHCP lease");
+//     if (detectedMac !== userMac) throw new Error("Device not registered");
+//   }
+// };
 
 export const attendanceValidate = {
   checkIn: async (userId: Types.ObjectId, clientIp: string, reason?: string): Promise<{ isLateCheckIn: boolean }> => {
@@ -71,14 +69,12 @@ export const attendanceValidate = {
       throw new Error("It's too late to check in");
     }
 
-    // MikroTik DHCP-based device validation
-    const userDevice = await userRepository.findUserMacAddress(userId);
-
-    if (!userDevice?.mac_address) {
-      throw new Error("Device not found");
-    }
-
-    await assertDeviceOnNetwork(clientIp, userDevice.mac_address!);
+    // [DISABLED] MikroTik/MAC/WiFi device validation
+    // const userDevice = await userRepository.findUserMacAddress(userId);
+    // if (!userDevice?.mac_address) {
+    //   throw new Error("Device not found");
+    // }
+    // await assertDeviceOnNetwork(clientIp, userDevice.mac_address!);
 
     const userAttendance = await attendanceRepository.findOne({
       userId,
@@ -117,14 +113,12 @@ export const attendanceValidate = {
       timeOut = dateHelper.getTimeTodayWIB(16);
     }
 
-    // MikroTik DHCP-based device validation
-    const userDevice = await userRepository.findUserMacAddress(userId);
-
-    if (!userDevice?.mac_address) {
-      throw new Error("Device not found");
-    }
-
-    await assertDeviceOnNetwork(clientIp, userDevice.mac_address!);
+    // [DISABLED] MikroTik/MAC/WiFi device validation
+    // const userDevice = await userRepository.findUserMacAddress(userId);
+    // if (!userDevice?.mac_address) {
+    //   throw new Error("Device not found");
+    // }
+    // await assertDeviceOnNetwork(clientIp, userDevice.mac_address!);
 
     const userAttendance = await attendanceRepository.findOne({
       userId,

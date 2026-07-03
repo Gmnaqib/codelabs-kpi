@@ -259,28 +259,26 @@ const attendanceController = {
   },
 
   networkCheck: async (req: AuthRequest, res: Response): Promise<any> => {
-    const clientIp = getClientIp(req).replace(/^::ffff:/, "").trim();
-    const mikrotikHost = process.env.MIKROTIK_HOST ?? "";
-    const subnetPrefix = mikrotikHost.split(".").slice(0, 3).join(".") + ".";
-    let connected = clientIp.startsWith(subnetPrefix);
-
-    // Fallback: jika request dari loopback (dev/same machine), cek MAC user di DHCP MikroTik
-    if (!connected && (clientIp === "127.0.0.1" || clientIp === "::1") && req.user?.id) {
-      try {
-        const userDevice = await userRepository.findUserMacAddress(new Types.ObjectId(req.user.id));
-        if (userDevice?.mac_address) {
-          const leases = await mikrotikService.getDhcpLeases();
-          connected = leases.some((lease: any) => {
-            const mac = (lease["active-mac-address"] || lease["mac-address"] || "").toUpperCase().replace(/-/g, ":");
-            return mac === userDevice.mac_address!.toUpperCase();
-          });
-        }
-      } catch {
-        connected = false;
-      }
-    }
-
-    return response({ res, code: 200, message: "Network check", data: { connected, clientIp } });
+    // [DISABLED] WiFi/MikroTik network validation — always return connected
+    // const clientIp = getClientIp(req).replace(/^::ffff:/, "").trim();
+    // const mikrotikHost = process.env.MIKROTIK_HOST ?? "";
+    // const subnetPrefix = mikrotikHost.split(".").slice(0, 3).join(".") + ".";
+    // let connected = clientIp.startsWith(subnetPrefix);
+    // if (!connected && (clientIp === "127.0.0.1" || clientIp === "::1") && req.user?.id) {
+    //   try {
+    //     const userDevice = await userRepository.findUserMacAddress(new Types.ObjectId(req.user.id));
+    //     if (userDevice?.mac_address) {
+    //       const leases = await mikrotikService.getDhcpLeases();
+    //       connected = leases.some((lease: any) => {
+    //         const mac = (lease["active-mac-address"] || lease["mac-address"] || "").toUpperCase().replace(/-/g, ":");
+    //         return mac === userDevice.mac_address!.toUpperCase();
+    //       });
+    //     }
+    //   } catch {
+    //     connected = false;
+    //   }
+    // }
+    return response({ res, code: 200, message: "Network check", data: { connected: true } });
   },
 
   submitLeaveByOperational: async (req: AuthRequest, res: Response): Promise<any> => {
