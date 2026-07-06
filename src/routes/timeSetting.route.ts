@@ -6,12 +6,13 @@ import { roleMiddlewares } from "../middlewares/role.middlewares";
 const timeSettingRouter = Router();
 
 const adminOnly = [authenticateToken, roleMiddlewares(["admin", "president"])];
+const canUpdate = [authenticateToken, roleMiddlewares(["admin", "president", "minister of operation"])];
 
 timeSettingRouter.post("/",            ...adminOnly, timeSettingController.create);
 timeSettingRouter.get("/",             authenticateToken, timeSettingController.findAll);
 timeSettingRouter.get("/code/:code",   authenticateToken, timeSettingController.findByCode);
 timeSettingRouter.get("/:id",          authenticateToken, timeSettingController.findById);
-timeSettingRouter.patch("/:id",        ...adminOnly, timeSettingController.updateById);
+timeSettingRouter.patch("/:id",        ...canUpdate, timeSettingController.updateById);
 timeSettingRouter.delete("/:id",       ...adminOnly, timeSettingController.deleteById);
 
 export default timeSettingRouter;
