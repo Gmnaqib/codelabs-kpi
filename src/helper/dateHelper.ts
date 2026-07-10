@@ -53,6 +53,21 @@ const dateHelper = {
     const dt = DateTime.fromJSDate(date).setZone(ZONE);
     return dt.toISO();
   },
+
+  // Merges an optional lower-bound cutoff into an existing $gte/$lte range,
+  // taking the later of the two $gte values (so an existing narrower filter,
+  // e.g. a specific month, is never widened past the cutoff). Returns the
+  // range unchanged if there's no cutoff to apply.
+  applyCutoffToRange(
+    existing: { $gte?: Date; $lte?: Date } | null | undefined,
+    cutoffDate?: Date | null
+  ): { $gte?: Date; $lte?: Date } | undefined {
+    if (!cutoffDate) return existing ?? undefined;
+    const gte = existing?.$gte && existing.$gte > cutoffDate ? existing.$gte : cutoffDate;
+    const merged: { $gte: Date; $lte?: Date } = { $gte: gte };
+    if (existing?.$lte) merged.$lte = existing.$lte;
+    return merged;
+  },
 };
 
 export default dateHelper;

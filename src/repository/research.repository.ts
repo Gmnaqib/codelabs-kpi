@@ -1,6 +1,7 @@
 import Research from "../models/research/research.schema";
 import IResearch, { progressStatus, ResearchStatus } from "../models/research/research.interface";
 import { Types } from "mongoose";
+import dateHelper from "../helper/dateHelper";
 
 interface ResearchFilter {
   _id?: Types.ObjectId | string;
@@ -32,6 +33,7 @@ const researchRepository = {
     progress?: progressStatus;
     status?: ResearchStatus | { $ne: any };
     date?: { year: number; month?: number };
+    cutoffDate?: Date;
   }) => {
     const query: any = {};
 
@@ -50,6 +52,9 @@ const researchRepository = {
         const endDate = new Date(filters.date.year, 11, 31, 23, 59, 59, 999);
         query.createdAt = { $gte: startDate, $lte: endDate };
       }
+    }
+    if (filters.cutoffDate) {
+      query.createdAt = dateHelper.applyCutoffToRange(query.createdAt, filters.cutoffDate);
     }
 
     return Research.find(query).populate("userId", "name").sort({ createdAt: -1 });
