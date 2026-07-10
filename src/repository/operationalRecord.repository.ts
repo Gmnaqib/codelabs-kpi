@@ -119,6 +119,8 @@ const operationalRecordRepository = {
 
   recordExists: (scheduleId: string, userId: string) =>
     OperationalRecord.exists({ scheduleId, userId }),
+
+  findLatestDateForUser: (userId: string) => OperationalRecord.findOne({ userId }).sort({ date: -1 }),
 };
 
 export default operationalRecordRepository;

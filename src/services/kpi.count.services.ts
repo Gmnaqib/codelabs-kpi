@@ -5,6 +5,8 @@ import operationalRecordRepository from "../repository/operationalRecord.reposit
 import brandingRepository from "../repository/branding.respository";
 import competitionRepository from "../repository/competition.respository";
 import userRepository from "../repository/user.repository";
+import KPIBaselineRepository from "../repository/kpi.baseline.repository";
+import dateHelper from "../helper/dateHelper";
 import { attendanceStatus } from "../models/attendance/attendance.Interface";
 import { CompetitionStatus } from "../models/competition/competition.interface";
 import { ScheduleType } from "../models/schedule/schedule.interface";
@@ -49,9 +51,18 @@ const KPICountService = {
     const masters: any[] = await KPIRepository.findAllMasters();
     const categories: any[] = [];
 
+    // A frozen baseline only ever applies to the lifetime/default view (no
+    // explicit year/month filter). A scoped monthly view stays fully live,
+    // unaffected by any baseline, since folding a per-user constant into a
+    // single month would distort month-over-month comparisons.
+    const baselines: any[] = dateFilter ? [] : await KPIBaselineRepository.findBaselinesByUserId(userId);
+    const baselineByMasterId = new Map(baselines.map((b: any) => [b.id_kpi_master.toString(), b]));
+
     for (const master of masters) {
       const details: any[] = await KPIRepository.findDetailsByMasterId(master._id.toString());
       const detailResults: any[] = [];
+      const baseline = baselineByMasterId.get(master._id.toString());
+      const cutoffDate: Date | undefined = baseline?.cutoffDate;
 
       for (const detail of details) {
         let jumlah_activity = 0;
@@ -60,19 +71,20 @@ const KPICountService = {
         const detailId = detail._id.toString();
 
         if (kementerian === "operational") {
+          const effectiveRange = dateHelper.applyCutoffToRange(dateRange ?? undefined, cutoffDate);
           const attendanceRecords = await attendanceRepository.findAll({
             userId: userObjectId,
             id_kpi_detail: detail._id,
             status: attendanceStatus.PRESENT,
             checkOut: { $ne: null } as any,
-            ...(dateRange && { createdAt: dateRange }),
+            ...(effectiveRange && { createdAt: effectiveRange }),
           });
           const operationalRecords = await operationalRecordRepository.findRecordsWithFilters({
             userId,
             id_kpi_detail: detailId,
-            ...(dateFilter && {
-              startDate: new Date(dateFilter.year, (dateFilter.month ?? 1) - 1, 1),
-              endDate: new Date(dateFilter.year, dateFilter.month ?? 12, 0, 23, 59, 59, 999),
+            ...(effectiveRange && {
+              startDate: effectiveRange.$gte,
+              endDate: effectiveRange.$lte,
             }),
           });
           jumlah_activity = attendanceRecords.length + operationalRecords.length;
@@ -84,6 +96,7 @@ const KPICountService = {
             id_kpi_detail: detailId,
             status: { $ne: null } as any,
             ...(dateFilter && { date: dateFilter }),
+            ...(cutoffDate && { cutoffDate }),
           });
           jumlah_activity = records.length;
           const rawTotal = records.reduce((sum: number, r: any) => {
@@ -94,7 +107,8 @@ const KPICountService = {
         } else if (kementerian === "branding") {
           const records = await brandingRepository.findBrandingsByFilter(
             { userId: userObjectId, id_kpi_detail: detail._id, status: { $ne: null } },
-            dateFilter ? { year: dateFilter.year, month: dateFilter.month ?? new Date().getMonth() + 1 } : undefined
+            dateFilter ? { year: dateFilter.year, month: dateFilter.month ?? new Date().getMonth() + 1 } : undefined,
+            cutoffDate
           );
           jumlah_activity = records.length;
           const rawBranding = records.reduce((sum: number, r: any) => {
@@ -105,10 +119,32 @@ const KPICountService = {
         } else if (kementerian === "competition") {
           const records = await competitionRepository.findCompetitionsByFilter(
             { userId: userObjectId, id_kpi_detail: detail._id, status: CompetitionStatus.Approved },
-            dateFilter ? { year: dateFilter.year, month: dateFilter.month ?? new Date().getMonth() + 1 } : undefined
+            dateFilter ? { year: dateFilter.year, month: dateFilter.month ?? new Date().getMonth() + 1 } : undefined,
+            cutoffDate
           );
           jumlah_activity = records.length;
           point_akhir = hitungPoint(detail.point, detail.max_activity, jumlah_activity, detail.label);
+        }
+
+        // Fold in the frozen baseline for this specific detail, if one
+        // exists. Only merge it into a single combined row when the
+        // detail's name hasn't changed since it was frozen — if it HAS
+        // been renamed, keep the frozen portion as its own separate row
+        // under its ORIGINAL name (below) instead of silently relabeling
+        // historical activity to whatever the detail is called now.
+        // REQUIRED details must never exceed their own weight ceiling
+        // after combining historical + fresh activity; OPTIONAL details
+        // stay uncapped, matching how a single live calculation already
+        // treats them today.
+        const frozenDetail = baseline?.detailSnapshot?.find(
+          (d: any) => d.kpiDetailId.toString() === detailId
+        );
+        const wasRenamed = !!frozenDetail && frozenDetail.kpi_item !== detail.kpi_item;
+        if (frozenDetail && !wasRenamed) {
+          const combined = point_akhir + frozenDetail.point_akhir;
+          point_akhir = detail.label === "REQUIRED" ? Math.min(combined, detail.point) : combined;
+          point_akhir = Math.floor(point_akhir * 10) / 10;
+          jumlah_activity += frozenDetail.jumlah_activity;
         }
 
         detailResults.push({
@@ -119,6 +155,40 @@ const KPICountService = {
           jumlah_activity,
           point_akhir,
         });
+
+        if (wasRenamed && frozenDetail) {
+          detailResults.push({
+            kpiDetailId: frozenDetail.kpiDetailId,
+            kpi_item: frozenDetail.kpi_item,
+            label: "FROZEN",
+            point_per_activity: 0,
+            jumlah_activity: frozenDetail.jumlah_activity,
+            point_akhir: frozenDetail.point_akhir,
+          });
+        }
+      }
+
+      // A baseline can hold a frozen snapshot for a detail that has since
+      // been deleted — it no longer appears in `details` above, so the loop
+      // never gets a chance to fold its frozen points back in. Add any such
+      // orphaned snapshots straight into this category's results so
+      // deleting a detail can never silently drop its historical points.
+      // There's no live detail left to re-clamp against, so these are
+      // added exactly as they were already (correctly) clamped when frozen.
+      if (baseline) {
+        const liveDetailIds = new Set(details.map((d: any) => d._id.toString()));
+        for (const frozenDetail of baseline.detailSnapshot ?? []) {
+          if (!liveDetailIds.has(frozenDetail.kpiDetailId.toString())) {
+            detailResults.push({
+              kpiDetailId: frozenDetail.kpiDetailId,
+              kpi_item: frozenDetail.kpi_item,
+              label: "FROZEN",
+              point_per_activity: 0,
+              jumlah_activity: frozenDetail.jumlah_activity,
+              point_akhir: frozenDetail.point_akhir,
+            });
+          }
+        }
       }
 
       const total_point = parseFloat(

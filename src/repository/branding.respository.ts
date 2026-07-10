@@ -1,6 +1,7 @@
 import Branding from "../models/branding/branding.schema";
 import IBranding, { BrandingStatus, researchCategory, brandingLevel } from "../models/branding/branding.interface";
 import { Types } from "mongoose";
+import dateHelper from "../helper/dateHelper";
 
 interface BrandingFilter {
   _id?: Types.ObjectId | string;
@@ -34,13 +35,16 @@ const brandingRepository = {
   },
   findBrandingById: (id: string) => Branding.findById(id),
   findBranding: (filter: BrandingFilter) => Branding.findOne(filter),
-  findBrandingsByFilter: (filter: BrandingFilter, date?: { year: number; month: number }) => {
+  findBrandingsByFilter: (filter: BrandingFilter, date?: { year: number; month: number }, cutoffDate?: Date) => {
     const query: any = { ...filter };
     if (date) {
       query.createdAt = {
         $gte: new Date(date.year, date.month - 1, 1),
         $lte: new Date(date.year, date.month, 0, 23, 59, 59, 999),
       };
+    }
+    if (cutoffDate) {
+      query.createdAt = dateHelper.applyCutoffToRange(query.createdAt, cutoffDate);
     }
     return Branding.find(query);
   },

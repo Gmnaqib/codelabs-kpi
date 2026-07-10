@@ -1,6 +1,7 @@
 import Competition from "../models/competition/competition.schema";
 import ICompetition, { CompetitionStatus, CompetitionType } from "../models/competition/competition.interface";
 import { Types } from "mongoose";
+import dateHelper from "../helper/dateHelper";
 
 interface CompetitionFilter {
   _id?: Types.ObjectId | string;
@@ -34,13 +35,16 @@ const competitionRepository = {
   },
   findCompetitionById: (id: string) => Competition.findById(id),
   findCompetition: (filter: CompetitionFilter) => Competition.findOne(filter),
-  findCompetitionsByFilter: (filter: CompetitionFilter, date?: { year: number; month: number }) => {
+  findCompetitionsByFilter: (filter: CompetitionFilter, date?: { year: number; month: number }, cutoffDate?: Date) => {
     const query: any = { ...filter };
     if (date) {
       query.createdAt = {
         $gte: new Date(date.year, date.month - 1, 1),
         $lte: new Date(date.year, date.month, 0, 23, 59, 59, 999),
       };
+    }
+    if (cutoffDate) {
+      query.createdAt = dateHelper.applyCutoffToRange(query.createdAt, cutoffDate);
     }
     return Competition.find(query);
   },
