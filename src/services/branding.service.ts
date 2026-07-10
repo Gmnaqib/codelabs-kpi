@@ -1,10 +1,10 @@
 import brandingRepository from "../repository/branding.respository";
-import IBranding, { BrandingStatus, researchCategory, brandingLevel } from "../models/branding/branding.interface";
+import IBranding, { BrandingStatus, brandingLevel } from "../models/branding/branding.interface";
 import { validateKpiDetailKementerian } from "../helper/kpi.detail.validator";
 import { Types } from "mongoose";
 
 const BrandingService = {
-  addBranding: async (userId: string, name: string, description: string, link: string, research: researchCategory, level: brandingLevel, id_kpi_detail?: string): Promise<IBranding> => {
+  addBranding: async (userId: string, name: string, description: string, link: string, research: string, level: brandingLevel, id_kpi_detail?: string): Promise<IBranding> => {
     if (id_kpi_detail) {
       await validateKpiDetailKementerian(id_kpi_detail, "branding");
     }
@@ -50,7 +50,7 @@ const BrandingService = {
     return { total: result[0].total, brandings: result[0].brandings };
   },
 
-  updateMyBranding: async (id: string, userId: string, updateData: { name?: string; description?: string; link?: string; research?: researchCategory; level?: brandingLevel; id_kpi_detail?: string }): Promise<any> => {
+  updateMyBranding: async (id: string, userId: string, updateData: { name?: string; description?: string; link?: string; research?: string; level?: brandingLevel; id_kpi_detail?: string }): Promise<any> => {
     const branding = await brandingRepository.findBrandingById(id);
     if (!branding) throw new Error("Branding not found");
     if (branding.userId.toString() !== userId) throw new Error("You can only update your own brandings");
@@ -78,7 +78,7 @@ const BrandingService = {
     return branding;
   },
 
-  updateBranding: async (id: string, updateData: { name?: string; description?: string; link?: string; status?: BrandingStatus; research?: researchCategory; level?: brandingLevel; id_kpi_detail?: string }): Promise<IBranding> => {
+  updateBranding: async (id: string, updateData: { name?: string; description?: string; link?: string; status?: BrandingStatus; research?: string; level?: brandingLevel; id_kpi_detail?: string }): Promise<IBranding> => {
     const branding = await brandingRepository.findBrandingById(id);
     if (!branding) throw new Error("Branding not found");
 

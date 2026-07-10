@@ -21,15 +21,6 @@ export const BRANDING_STATUS_LABELS: Record<BrandingStatus, string> = {
 export type BrandingStatus = typeof statusBranding[keyof typeof statusBranding];
 export const BRANDING_STATUS_VALUES = Object.values(statusBranding);
 
-export enum researchCategory {
-  website = "website",
-  mobile = "mobile",
-  game = "game",
-  ui = "ui/ux",
-  data = "data",
-  other = "other",
-}
-
 export enum brandingLevel {
   Beginner = "beginner",
   Intermediate = "intermediate",
@@ -41,7 +32,7 @@ interface IBranding {
   id_kpi_detail: Types.ObjectId;
   name: string;
   description: string;
-  research: researchCategory;
+  research: string;
   level: string;
   link: string;
   status?: BrandingStatus;  // null = belum direview, 0-5 = nilai dari admin

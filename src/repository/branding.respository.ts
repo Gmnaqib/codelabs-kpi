@@ -1,5 +1,5 @@
 import Branding from "../models/branding/branding.schema";
-import IBranding, { BrandingStatus, researchCategory, brandingLevel } from "../models/branding/branding.interface";
+import IBranding, { BrandingStatus, brandingLevel } from "../models/branding/branding.interface";
 import { Types } from "mongoose";
 import dateHelper from "../helper/dateHelper";
 
@@ -11,7 +11,7 @@ interface BrandingFilter {
   description?: string;
   link?: string;
   status?: BrandingStatus | { $ne: any } | { $gte: number };
-  type?: researchCategory;
+  type?: string;
   level?: brandingLevel;
 }
 

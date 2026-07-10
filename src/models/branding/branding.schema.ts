@@ -1,6 +1,6 @@
 import { Schema, model } from "mongoose";
 import mongoose from "mongoose";
-import IBranding, { BRANDING_STATUS_VALUES, researchCategory, brandingLevel } from "./branding.interface";
+import IBranding, { BRANDING_STATUS_VALUES, brandingLevel } from "./branding.interface";
 
 const brandingSchema = new Schema<IBranding>(
   {
@@ -19,7 +19,6 @@ const brandingSchema = new Schema<IBranding>(
     },
     research: {
       type: String,
-      enum: Object.values(researchCategory),
       required: true,
     },
     level: {
