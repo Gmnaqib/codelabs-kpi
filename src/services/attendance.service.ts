@@ -9,6 +9,7 @@ import { ScheduleType } from "../models/schedule/schedule.interface";
 import { resolveKpiDetailId } from "../helper/kpi.detail.validator";
 import { Types } from "mongoose";
 import dateHelper from "../helper/dateHelper";
+import operationalRecordRepository from "../repository/operationalRecord.repository";
 
 const convertRecordsToIndonesiaTime = (records: any[]): any[] => {
   return records.map((r) => ({
@@ -211,101 +212,60 @@ const attendanceService = {
       attendanceUserMap.set(userId, records);
     });
 
-    const userSummary = allUsers.map((user) => {
+    // Tentukan period sekali untuk semua user
+    const today = new Date();
+    const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
+    let startOfPeriod: Date;
+
+    if (year !== undefined && month !== undefined) {
+      startOfPeriod = new Date(year, month - 1, 1, 0, 0, 0, 0);
+    } else if (year !== undefined) {
+      startOfPeriod = new Date(year, 0, 1, 0, 0, 0, 0);
+    } else {
+      startOfPeriod = new Date(today.getFullYear(), today.getMonth(), 1, 0, 0, 0, 0);
+    }
+
+    const userSummary = await Promise.all(allUsers.map(async (user) => {
       const userId = user._id?.toString() || "";
       const records = attendanceUserMap.get(userId) || [];
 
-      if (records.length > 0) {
-        // User has attendance data
-        const userLate = records.filter((r) => r.status === "present" && r.reason).length;
-        const userPresent = records.filter((r) => r.status === "present" && !r.reason).length;
-        const userSick = records.filter((r) => r.status === "sick").length;
-        const userPermit = records.filter((r) => r.status === "permit").length;
-        const rejectedSickPermit = records.filter((r) => (r.status === "sick" || r.status === "permit") && r.approval_status === "rejected").length;
+      // Collect dates dari attendance records saja
+      const datesWithData = new Set<string>();
+      records.forEach((r) => {
+        const refDate = r.checkIn ?? r.createdAt ?? new Date();
+        const dateStr = dateHelper.getDate(new Date(refDate));
+        datesWithData.add(dateStr);
+      });
 
-        let startOfPeriod = new Date();
-        let endOfPeriod = new Date();
+      const userLate = records.filter((r) => r.status === "present" && r.reason).length;
+      const userPresent = records.filter((r) => r.status === "present" && !r.reason).length;
+      const userSick = records.filter((r) => r.status === "sick").length;
+      const userPermit = records.filter((r) => r.status === "permit").length;
+      const rejectedSickPermit = records.filter((r) => (r.status === "sick" || r.status === "permit") && r.approval_status === "rejected").length;
 
-        const today = new Date();
-        const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
-
-        if (year !== undefined && month !== undefined) {
-          startOfPeriod = new Date(year, month - 1, 1, 0, 0, 0, 0);
-          endOfPeriod = todayEnd;
-        } else if (year !== undefined) {
-          startOfPeriod = new Date(year, 0, 1, 0, 0, 0, 0);
-          endOfPeriod = todayEnd;
-        } else {
-          startOfPeriod = new Date(new Date().getFullYear(), new Date().getMonth(), 1, 0, 0, 0, 0);
-          endOfPeriod = todayEnd;
+      // Hitung missing dates (No Report) — hari kerja Senin-Sabtu yang tidak ada di datesWithData
+      let missingDateCount = 0;
+      const currentDate = new Date(startOfPeriod);
+      while (currentDate <= todayEnd) {
+        const dateStr = dateHelper.getDate(currentDate);
+        const dayOfWeek = currentDate.getDay();
+        if (dayOfWeek !== 0 && !datesWithData.has(dateStr)) {
+          missingDateCount++;
         }
-
-        // Collect dates that have data
-        const datesWithData = new Set<string>();
-        records.forEach((r) => {
-          const dateStr = new Date(r.createdAt ?? new Date()).toISOString().split("T")[0];
-          datesWithData.add(dateStr);
-        });
-
-        // Count missing dates (Monday-Saturday only)
-        let missingDateCount = 0;
-        const currentDate = new Date(startOfPeriod);
-        while (currentDate <= endOfPeriod) {
-          const dateStr = currentDate.toISOString().split("T")[0];
-          const dayOfWeek = currentDate.getDay();
-
-          if (dayOfWeek !== 0 && !datesWithData.has(dateStr)) {
-            missingDateCount++;
-          }
-          currentDate.setDate(currentDate.getDate() + 1);
-        }
-
-        const userAbsent = rejectedSickPermit + missingDateCount;
-
-        const counts: any = {};
-        if (userLate > 0) counts.late = userLate;
-        if (userPresent > 0) counts.present = userPresent;
-        if (userSick > 0) counts.sick = userSick;
-        if (userPermit > 0) counts.permit = userPermit;
-        if (userAbsent > 0) counts.absent = userAbsent;
-
-        return { userId, userName: user.name, counts };
-      } else {
-        const today = new Date();
-        const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
-
-        let startOfPeriod = new Date();
-        if (year !== undefined && month !== undefined) {
-          startOfPeriod = new Date(year, month - 1, 1, 0, 0, 0, 0);
-        } else if (year !== undefined) {
-          startOfPeriod = new Date(year, 0, 1, 0, 0, 0, 0);
-        } else {
-          startOfPeriod = new Date(new Date().getFullYear(), new Date().getMonth(), 1, 0, 0, 0, 0);
-        }
-
-        // Count working days (Monday-Saturday) from start to today
-        let absentDays = 0;
-        const currentDate = new Date(startOfPeriod);
-        while (currentDate <= todayEnd) {
-          const dayOfWeek = currentDate.getDay();
-          if (dayOfWeek !== 0) {
-            // Not Sunday
-            absentDays++;
-          }
-          currentDate.setDate(currentDate.getDate() + 1);
-        }
-
-        const counts: any = {
-          late: 0,
-          present: 0,
-          sick: 0,
-          permit: 0,
-          absent: absentDays,
-        };
-
-        return { userId, userName: user.name, counts };
+        currentDate.setDate(currentDate.getDate() + 1);
       }
-    });
+
+      const userAbsent = rejectedSickPermit + missingDateCount;
+
+      const counts: any = {};
+      if (userLate > 0) counts.late = userLate;
+      if (userPresent > 0) counts.present = userPresent;
+      if (userSick > 0) counts.sick = userSick;
+      if (userPermit > 0) counts.permit = userPermit;
+      if (userAbsent > 0) counts.absent = userAbsent;
+
+      return { userId, userName: user.name, counts };
+    }));
 
     return userSummary;
   },
@@ -417,10 +377,11 @@ const attendanceService = {
       endOfPeriod = todayEnd;
     }
 
-    // Collect all dates that have data
+    // Collect all dates that have data dari attendance records saja
     const datesWithData = new Set<string>();
     attendanceRecords.forEach((r) => {
-      const dateStr = new Date(r.createdAt ?? new Date()).toISOString().split("T")[0];
+      const refDate = r.checkIn ?? r.createdAt ?? new Date();
+      const dateStr = dateHelper.getDate(new Date(refDate));
       datesWithData.add(dateStr);
     });
 
@@ -428,7 +389,7 @@ const attendanceService = {
     const missingDates: Date[] = [];
     const currentDate = new Date(startOfPeriod);
     while (currentDate <= endOfPeriod) {
-      const dateStr = currentDate.toISOString().split("T")[0];
+      const dateStr = dateHelper.getDate(currentDate);
       const dayOfWeek = currentDate.getDay();
 
       // Only count Monday-Saturday (0 = Sunday, skip it)
