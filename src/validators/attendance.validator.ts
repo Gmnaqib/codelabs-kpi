@@ -161,7 +161,7 @@ export const attendanceValidate = {
       });
 
       if (existingAttendance) {
-        throw new Error("Anda sudah absen pada tanggal " + d.toISOString().split("T")[0]);
+        throw new Error("You have already submitted attendance for " + dateHelper.getDate(d));
       }
     }
   },

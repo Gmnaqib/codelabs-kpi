@@ -57,7 +57,7 @@ const operationalRecordRepository = {
     const query: any = {};
 
     if (filters.scheduleId) query.scheduleId = filters.scheduleId;
-    if (filters.userId) query.userId = filters.userId;
+    if (filters.userId) query.userId = new Types.ObjectId(filters.userId);
     if (filters.id_kpi_detail) query.id_kpi_detail = new Types.ObjectId(filters.id_kpi_detail);
     if (filters.type) query.type = filters.type;
     if (filters.status) query.status = filters.status;
@@ -97,7 +97,7 @@ const operationalRecordRepository = {
     const query: any = {};
 
     if (filters.scheduleId) query.scheduleId = filters.scheduleId;
-    if (filters.userId) query.userId = filters.userId;
+    if (filters.userId) query.userId = new Types.ObjectId(filters.userId);
     if (filters.id_kpi_detail) query.id_kpi_detail = new Types.ObjectId(filters.id_kpi_detail);
     if (filters.type) query.type = filters.type;
     if (filters.status) query.status = filters.status;
