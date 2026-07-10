@@ -28,6 +28,7 @@ attendanceRouter.get(
 
 // Attendance endpoints
 attendanceRouter.get("/me/today", authenticateToken, attendanceController.getMyStatusToday);
+attendanceRouter.get("/leave-requests/me/today", authenticateToken, attendanceController.getMyLeaveRequestToday);
 attendanceRouter.get("/network-check", authenticateToken, attendanceController.networkCheck);
 attendanceRouter.post("/checkin", authenticateToken, attendanceController.checkin);
 attendanceRouter.patch("/checkout", authenticateToken, attendanceController.checkOut);

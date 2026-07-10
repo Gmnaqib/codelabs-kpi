@@ -243,6 +243,44 @@ const attendanceController = {
     }
   },
 
+  getMyLeaveRequestToday: async (req: AuthRequest, res: Response): Promise<any> => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) return response({ res, code: 401, message: "Authentication required" });
+
+      const startOfDay = dateHelper.getStartOfDayWIB();
+      const endOfDay = dateHelper.getEndOfDayWIB();
+
+      // Today falls within [start_date, end_date] rather than requiring an
+      // exact match on start_date, since a leave request can be submitted
+      // for a multi-day range (or, when tested with a future-dated range,
+      // still needs to show as "not today" rather than never matching at all).
+      const record = await attendanceRepository.findOne({
+        userId: new Types.ObjectId(userId),
+        approval_status: { $exists: true },
+        start_date: { $lte: endOfDay },
+        $or: [{ end_date: { $exists: false } }, { end_date: null }, { end_date: { $gte: startOfDay } }],
+      } as any);
+
+      if (!record) {
+        return response({ res, code: 200, message: "No leave request today", data: null });
+      }
+
+      return response({
+        res,
+        code: 200,
+        message: "Leave request today retrieved successfully",
+        data: {
+          type: record.status,
+          status: record.approval_status,
+          reason: record.reason,
+        },
+      });
+    } catch (error: any) {
+      return response({ res, code: 500, message: error.message });
+    }
+  },
+
   checkinByAdmin: async (req: AuthRequest, res: Response): Promise<any> => {
     try {
       const { userId } = req.body;
