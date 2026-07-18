@@ -11,8 +11,8 @@ export const DEFAULT_TIME_SETTINGS: Record<string, ITimeSetting> = {
     checkout: "17:00",
     checkoutlate: "19:00",
   },
-  SATURDAY: {
-    code: "SATURDAY",
+  WEEKEND: {
+    code: "WEEKEND",
     checkin: "06:00",
     checkinlimit: "09:00",
     checkinlatelimit: "10:00",

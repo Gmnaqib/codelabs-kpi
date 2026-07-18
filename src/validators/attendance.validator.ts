@@ -13,9 +13,9 @@ const parseTime = (hhmm: string): { hour: number; minute: number } => {
   return { hour, minute };
 };
 
-const getDayCode = (): "WEEKDAY" | "SATURDAY" => {
+const getDayCode = (): "WEEKDAY" | "WEEKEND" => {
   const weekday = DateTime.now().setZone("Asia/Jakarta").weekday;
-  if (weekday === 6) return "SATURDAY";
+  if (weekday === 6) return "WEEKEND";
   return "WEEKDAY";
 };
 
