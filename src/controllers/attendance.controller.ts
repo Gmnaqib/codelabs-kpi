@@ -9,6 +9,7 @@ import mikrotikService from "../services/mikrotik.service";
 import dateHelper from "../helper/dateHelper";
 import { getClientIp } from "../helper/networkHelper";
 import { Types } from "mongoose";
+import { attendanceStatus } from "../models/attendance/attendance.Interface";
 
 const resolveAttendanceError = (message: string): { code: number; message: string } => {
   const msg = message.toLowerCase();
@@ -73,11 +74,27 @@ const attendanceController = {
       const startOfDay = dateHelper.getStartOfDayWIB();
       const endOfDay = dateHelper.getEndOfDayWIB();
 
+      // A user can only have one attendance record per day, whether that's a
+      // check-in, a sick request, or a permit request — block a new leave
+      // request if any of those already exist for today.
+      const existingCheckIn = await attendanceRepository.findOne({
+        userId: new Types.ObjectId(userId),
+        checkIn: { $gte: startOfDay, $lt: endOfDay } as any,
+      });
+
+      if (existingCheckIn) {
+        return response({ res, code: 400, message: "Anda sudah melakukan check-in hari ini. Tidak bisa submit leave/sick request." });
+      }
+
+      // Today falls within [start_date, end_date] rather than requiring an
+      // exact match on start_date, matching the overlap check used by
+      // getMyLeaveRequestToday, since a leave request can span multiple days.
       const existingLeaveRequest = await attendanceRepository.findOne({
         userId: new Types.ObjectId(userId),
-        start_date: { $gte: startOfDay, $lt: endOfDay } as any,
-        approval_status: { $exists: true } as any,
-      });
+        status: { $in: [attendanceStatus.SICK, attendanceStatus.PERMIT] } as any,
+        start_date: { $lte: endOfDay } as any,
+        $or: [{ end_date: { $exists: false } }, { end_date: null }, { end_date: { $gte: startOfDay } }],
+      } as any);
 
       if (existingLeaveRequest) {
         return response({ res, code: 400, message: "Anda sudah submit leave/sick request hari ini. Tidak bisa submit lagi" });
