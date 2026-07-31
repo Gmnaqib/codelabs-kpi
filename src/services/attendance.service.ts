@@ -237,11 +237,14 @@ const attendanceService = {
         datesWithData.add(dateStr);
       });
 
-      const userLate = records.filter((r) => r.status === "present" && r.reason).length;
-      const userPresent = records.filter((r) => r.status === "present" && !r.reason).length;
+      // Present/late only count once checkout is done — a check-in alone
+      // (even from earlier today) is treated as absent, not present.
+      const userLate = records.filter((r) => r.status === "present" && r.reason && r.checkOut).length;
+      const userPresent = records.filter((r) => r.status === "present" && !r.reason && r.checkOut).length;
       const userSick = records.filter((r) => r.status === "sick").length;
       const userPermit = records.filter((r) => r.status === "permit").length;
       const rejectedSickPermit = records.filter((r) => (r.status === "sick" || r.status === "permit") && r.approval_status === "rejected").length;
+      const incompleteCheckin = records.filter((r) => r.status === "present" && !r.checkOut).length;
 
       // Hitung missing dates (No Report) — hari kerja Senin-Sabtu yang tidak ada di datesWithData
       let missingDateCount = 0;
@@ -255,7 +258,7 @@ const attendanceService = {
         currentDate.setDate(currentDate.getDate() + 1);
       }
 
-      const userAbsent = rejectedSickPermit + missingDateCount;
+      const userAbsent = rejectedSickPermit + incompleteCheckin + missingDateCount;
 
       const counts: any = {};
       if (userLate > 0) counts.late = userLate;
@@ -291,8 +294,11 @@ const attendanceService = {
 
     const statusSummary: any[] = [];
 
+    // Present/late only count once checkout is done — a check-in alone
+    // (even from earlier today) is treated as absent, not present.
+
     // Late - Present dengan reason
-    const lateRecords = attendanceRecords.filter((r) => r.status === "present" && r.reason);
+    const lateRecords = attendanceRecords.filter((r) => r.status === "present" && r.reason && r.checkOut);
     if (lateRecords.length > 0) {
       statusSummary.push({
         status: "late",
@@ -307,8 +313,7 @@ const attendanceService = {
       });
     }
 
-    // Present - Present tanpa reason
-    const presentRecords = attendanceRecords.filter((r) => r.status === "present" && !r.reason);
+    const presentRecords = attendanceRecords.filter((r) => r.status === "present" && !r.reason && r.checkOut);
     if (presentRecords.length > 0) {
       statusSummary.push({
         status: "present",
@@ -359,6 +364,9 @@ const attendanceService = {
     // Absent - Jika tidak ada data (sick, permit, present) atau jika sick/permit statusnya rejected
     const rejectedSickPermit = attendanceRecords.filter((r) => (r.status === "sick" || r.status === "permit") && r.approval_status === "rejected");
 
+    // Checked in but never checked out - counts as absent, not present
+    const incompleteCheckinRecords = attendanceRecords.filter((r) => r.status === "present" && !r.checkOut);
+
     // Get date range untuk calculate date yang gk ada
     let startOfPeriod = new Date();
     let endOfPeriod = new Date();
@@ -408,6 +416,16 @@ const attendanceService = {
         reason: `${r.status} (rejected)`,
         attendanceStatus: r.status,
         approvalStatus: r.approval_status || null,
+      });
+    });
+
+    // Add checked-in-but-never-checked-out records as absent
+    incompleteCheckinRecords.forEach((r) => {
+      absentRecords.push({
+        date: r.createdAt,
+        reason: "Check-in without check-out",
+        attendanceStatus: r.status,
+        approvalStatus: null,
       });
     });
 
