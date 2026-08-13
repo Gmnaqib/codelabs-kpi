@@ -33,6 +33,7 @@ kpiItemRouter.get("/operational", authenticateToken, KPICountController.getAllOp
 kpiItemRouter.get("/me", authenticateToken, KPICountController.getMyKPISummary);
 kpiItemRouter.get("/summary/:userId", authenticateToken, KPICountController.getKPISummaryByUserId);
 kpiItemRouter.get("/", authenticateToken, KPICountController.getAllKPISummary);
+kpiItemRouter.get("/sp", authenticateToken, roleMiddlewares(["admin"]), KPICountController.getAllSPStatus);
 
 
 

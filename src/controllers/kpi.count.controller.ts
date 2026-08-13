@@ -32,12 +32,18 @@ const KPICountController = {
       const rankIndex = allSummaries.findIndex((s) => s.userId.toString() === userId.toString());
       const summary = rankIndex >= 0 ? allSummaries[rankIndex] : await KPICountService.getMyKPISummary(userId, dateFilter);
       const rank = rankIndex >= 0 ? rankIndex + 1 : null;
+      const spStatus = KPICountService.getSPStatus(summary.grand_total);
 
       return response({
         res,
         code: 200,
         message: "KPI summary retrieved successfully",
-        data: { ...summary, totalPoints: summary.grand_total, rank },
+        data: {
+          ...summary,
+          totalPoints: summary.grand_total,
+          rank,
+          sp: spStatus.sp,
+        },
       });
     } catch (error: any) {
       return response({ res, code: 500, message: error.message });
@@ -51,15 +57,19 @@ const KPICountController = {
       const summaries = await KPICountService.getAllKPISummary(dateFilter);
       const currentUserRole = req.user?.role;
 
-      let data = summaries.map((s, index) => ({
-        rank: index + 1,
-        userId: s.userId,
-        name: s.name,
-        image: s.image ?? null,
-        totalPoints: s.grand_total,
-        grand_total: s.grand_total,
-        categories: s.categories,
-      }));
+      let data = summaries.map((s, index) => {
+        const spStatus = KPICountService.getSPStatus(s.grand_total);
+        return {
+          rank: index + 1,
+          userId: s.userId,
+          name: s.name,
+          image: s.image ?? null,
+          totalPoints: s.grand_total,
+          grand_total: s.grand_total,
+          categories: s.categories,
+          sp: spStatus.sp,
+        };
+      });
 
       if (currentUserRole !== "admin") {
         const allUsers = await userRepository.findAllUsers();
@@ -84,7 +94,13 @@ const KPICountController = {
       if (!userId) return response({ res, code: 400, message: "User ID is required" });
       const dateFilter = parseDateFilter(req.query);
       const summary = await KPICountService.getMyKPISummary(userId, dateFilter);
-      return response({ res, code: 200, message: "KPI summary retrieved successfully", data: summary });
+      const spStatus = KPICountService.getSPStatus(summary.grand_total);
+      return response({
+        res,
+        code: 200,
+        message: "KPI summary retrieved successfully",
+        data: { ...summary, sp: spStatus.sp },
+      });
     } catch (error: any) {
       return response({ res, code: 500, message: error.message });
     }
@@ -158,6 +174,30 @@ const KPICountController = {
       const dateFilter = parseDateFilter(req.query);
       const data = await KPICountService.getAllResearchSummary(dateFilter);
       return response({ res, code: 200, message: "Research summary retrieved successfully", data });
+    } catch (error: any) {
+      return response({ res, code: 500, message: error.message });
+    }
+  },
+
+  // GET /kpi/me/sp?year=2026&month=6
+  getMySPStatus: async (req: AuthRequest, res: Response): Promise<any> => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) return response({ res, code: 401, message: "Authentication required" });
+      const dateFilter = parseDateFilter(req.query);
+      const data = await KPICountService.getMySPStatus(userId, dateFilter);
+      return response({ res, code: 200, message: "SP status retrieved successfully", data });
+    } catch (error: any) {
+      return response({ res, code: 500, message: error.message });
+    }
+  },
+
+  // GET /kpi/sp?year=2026&month=6 (admin)
+  getAllSPStatus: async (req: Request, res: Response): Promise<any> => {
+    try {
+      const dateFilter = parseDateFilter(req.query);
+      const data = await KPICountService.getAllSPStatus(dateFilter);
+      return response({ res, code: 200, message: "All SP statuses retrieved successfully", data });
     } catch (error: any) {
       return response({ res, code: 500, message: error.message });
     }

@@ -40,7 +40,20 @@ const hitungPointRange = (point: number, maxActivity: number, nilaiStatus: numbe
   return Math.floor(result * 10) / 10;
 };
 
-const KPICountService = {
+
+const SP_THRESHOLDS: { sp: 1 | 2 | 3; max: number }[] = [
+  { sp: 3, max: 11 },
+  { sp: 2, max: 19 },
+  { sp: 1, max: 27 },
+];
+
+const getSPStatus = (grandTotal: number): { sp: 1 | 2 | 3 | null; grand_total: number } => {
+  const matched = SP_THRESHOLDS.find((t) => grandTotal <= t.max);
+  return {
+    sp: matched ? matched.sp : null,
+    grand_total: grandTotal,
+  };
+};const KPICountService = {
 
   getMyKPISummary: async (userId: string, dateFilter?: { year: number; month?: number }) => {
     const userObjectId = new Types.ObjectId(userId);
@@ -50,11 +63,6 @@ const KPICountService = {
     const dateRange = buildDateFilter(dateFilter);
     const masters: any[] = await KPIRepository.findAllMasters();
     const categories: any[] = [];
-
-    // A frozen baseline only ever applies to the lifetime/default view (no
-    // explicit year/month filter). A scoped monthly view stays fully live,
-    // unaffected by any baseline, since folding a per-user constant into a
-    // single month would distort month-over-month comparisons.
     const baselines: any[] = dateFilter ? [] : await KPIBaselineRepository.findBaselinesByUserId(userId);
     const baselineByMasterId = new Map(baselines.map((b: any) => [b.id_kpi_master.toString(), b]));
 
@@ -126,16 +134,6 @@ const KPICountService = {
           point_akhir = hitungPoint(detail.point, detail.max_activity, jumlah_activity, detail.label);
         }
 
-        // Fold in the frozen baseline for this specific detail, if one
-        // exists. Only merge it into a single combined row when the
-        // detail's name hasn't changed since it was frozen — if it HAS
-        // been renamed, keep the frozen portion as its own separate row
-        // under its ORIGINAL name (below) instead of silently relabeling
-        // historical activity to whatever the detail is called now.
-        // REQUIRED details must never exceed their own weight ceiling
-        // after combining historical + fresh activity; OPTIONAL details
-        // stay uncapped, matching how a single live calculation already
-        // treats them today.
         const frozenDetail = baseline?.detailSnapshot?.find(
           (d: any) => d.kpiDetailId.toString() === detailId
         );
@@ -168,13 +166,6 @@ const KPICountService = {
         }
       }
 
-      // A baseline can hold a frozen snapshot for a detail that has since
-      // been deleted — it no longer appears in `details` above, so the loop
-      // never gets a chance to fold its frozen points back in. Add any such
-      // orphaned snapshots straight into this category's results so
-      // deleting a detail can never silently drop its historical points.
-      // There's no live detail left to re-clamp against, so these are
-      // added exactly as they were already (correctly) clamped when frozen.
       if (baseline) {
         const liveDetailIds = new Set(details.map((d: any) => d._id.toString()));
         for (const frozenDetail of baseline.detailSnapshot ?? []) {
@@ -459,6 +450,35 @@ const KPICountService = {
     }
 
     return results.sort((a, b) => b.totalPoints - a.totalPoints);
+  },
+
+  // GET /kpi/me/sp?year=&month=
+  getMySPStatus: async (userId: string, dateFilter?: { year: number; month?: number }) => {
+    const summary = await KPICountService.getMyKPISummary(userId, dateFilter);
+    const status = getSPStatus(summary.grand_total);
+
+    return {
+      userId: summary.userId,
+      name: summary.name,
+      month: summary.month,
+      year: summary.year,
+      ...status,
+    };
+  },
+  getSPStatus,
+  getAllSPStatus: async (dateFilter?: { year: number; month?: number }) => {
+    const summaries = await KPICountService.getAllKPISummary(dateFilter);
+
+    return summaries.map((s) => {
+      const status = getSPStatus(s.grand_total);
+      return {
+        userId: s.userId,
+        name: s.name,
+        month: s.month,
+        year: s.year,
+        ...status,
+      };
+    });
   },
 };
 

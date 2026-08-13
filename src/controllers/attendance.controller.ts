@@ -74,9 +74,6 @@ const attendanceController = {
       const startOfDay = dateHelper.getStartOfDayWIB();
       const endOfDay = dateHelper.getEndOfDayWIB();
 
-      // A user can only have one attendance record per day, whether that's a
-      // check-in, a sick request, or a permit request — block a new leave
-      // request if any of those already exist for today.
       const existingCheckIn = await attendanceRepository.findOne({
         userId: new Types.ObjectId(userId),
         checkIn: { $gte: startOfDay, $lt: endOfDay } as any,
@@ -86,9 +83,6 @@ const attendanceController = {
         return response({ res, code: 400, message: "Anda sudah melakukan check-in hari ini. Tidak bisa submit leave/sick request." });
       }
 
-      // Today falls within [start_date, end_date] rather than requiring an
-      // exact match on start_date, matching the overlap check used by
-      // getMyLeaveRequestToday, since a leave request can span multiple days.
       const existingLeaveRequest = await attendanceRepository.findOne({
         userId: new Types.ObjectId(userId),
         status: { $in: [attendanceStatus.SICK, attendanceStatus.PERMIT] } as any,
@@ -129,48 +123,71 @@ const attendanceController = {
     }
   },
 
-  getAttendanceSummary: async (req: Request, res: Response): Promise<any> => {
+  getAttendanceSummary: async (req: AuthRequest, res: Response): Promise<any> => {
     try {
       const { year, month, day } = req.query;
       const yearNum = year ? Number(year) : undefined;
       const monthNum = month ? Number(month) : undefined;
       const dayNum = day ? Number(day) : undefined;
       const summary = await attendanceService.getAttendanceSummary(yearNum, monthNum, dayNum);
-      return response({ res, code: 200, message: "Attendance summary retrieved successfully", data: summary });
+
+      const rolesCanSeeSp = ["admin", "operational", "lecturer", "president"];
+      const canSeeSp = rolesCanSeeSp.includes(req.user?.role ?? "");
+      const data = canSeeSp
+        ? summary
+        : summary.map((s: any) => {
+            const { sp, ...restCounts } = s.counts;
+            return { ...s, counts: restCounts };
+          });
+
+      return response({ res, code: 200, message: "Attendance summary retrieved successfully", data });
     } catch (error: any) {
       return response({ res, code: 500, message: error.message });
     }
   },
 
   getAttendanceSummaryDetail: async (req: Request, res: Response): Promise<any> => {
-    try {
-      const { year, month } = req.query;
-      const userId = req.params.id as string;
-      const yearNum = year ? Number(year) : undefined;
-      const monthNum = month ? Number(month) : undefined;
-      const detailSummary = await attendanceService.getAttendanceSummaryDetail(new Types.ObjectId(userId), yearNum, monthNum);
-      return response({ res, code: 200, message: "Attendance detail summary retrieved successfully", data: detailSummary });
-    } catch (error: any) {
-      return response({ res, code: 500, message: error.message });
-    }
-  },
+      try {
+        const { year, month } = req.query;
+        const userId = req.params.id as string;
+        const yearNum = year ? Number(year) : undefined;
+        const monthNum = month ? Number(month) : undefined;
+        const detailSummary = await attendanceService.getAttendanceSummaryDetail(new Types.ObjectId(userId), yearNum, monthNum);
+        return response({ res, code: 200, message: "Attendance detail summary retrieved successfully", data: detailSummary });
+      } catch (error: any) {
+        return response({ res, code: 500, message: error.message });
+      }
+    },
 
-  getAttendanceSummaryDetailMe: async (req: AuthRequest, res: Response): Promise<any> => {
+    getAttendanceSummaryDetailMe: async (req: AuthRequest, res: Response): Promise<any> => {
     try {
       const userId = req.user?.id;
       if (!userId) {
         return response({ res, code: 400, message: "User ID is required" });
       }
-      const now = new Date();
-      const year: number = now.getFullYear();
-      const month: number = now.getMonth() + 1;
 
-      const detailSummary = await attendanceService.getAttendanceSummaryDetail(new Types.ObjectId(userId), year, month);
-      return response({ res, code: 200, message: "Attendance detail summary retrieved successfully", data: detailSummary });
+      // 1. Ambil query parameter year & month dari req.query
+      const { year, month } = req.query;
+      const yearNum = year ? Number(year) : undefined;
+      const monthNum = month ? Number(month) : undefined;
+
+      // 2. Pass yearNum dan monthNum ke service (jika undefined, service akan otomatis handle ke bulan berjalan)
+      const detailSummary = await attendanceService.getAttendanceSummaryDetail(
+        new Types.ObjectId(userId),
+        yearNum,
+        monthNum
+      );
+
+      return response({
+        res,
+        code: 200,
+        message: "Attendance detail summary retrieved successfully",
+        data: detailSummary,
+      });
     } catch (error: any) {
       return response({ res, code: 500, message: error.message });
     }
-  },
+},
 
   getLeaveRequests: async (req: Request, res: Response): Promise<any> => {
     try {
@@ -268,10 +285,6 @@ const attendanceController = {
       const startOfDay = dateHelper.getStartOfDayWIB();
       const endOfDay = dateHelper.getEndOfDayWIB();
 
-      // Today falls within [start_date, end_date] rather than requiring an
-      // exact match on start_date, since a leave request can be submitted
-      // for a multi-day range (or, when tested with a future-dated range,
-      // still needs to show as "not today" rather than never matching at all).
       const record = await attendanceRepository.findOne({
         userId: new Types.ObjectId(userId),
         approval_status: { $exists: true },

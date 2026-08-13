@@ -3,6 +3,7 @@ import attendanceValidate from "../validators/attendance.validator";
 import userRepository from "../repository/user.repository";
 import leaveRequestValidate from "../validators/leaveRequest.validator";
 import operationalRecordService from "./operationalRecord.service";
+import KPICountService from "./kpi.count.services";
 import IAttendance, { attendanceStatus, approvalStatus } from "../models/attendance/attendance.Interface";
 import { Status } from "../models/user/user.interface";
 import { ScheduleType } from "../models/schedule/schedule.interface";
@@ -10,6 +11,7 @@ import { resolveKpiDetailId } from "../helper/kpi.detail.validator";
 import { Types } from "mongoose";
 import dateHelper from "../helper/dateHelper";
 import operationalRecordRepository from "../repository/operationalRecord.repository";
+import { DateTime } from "luxon";
 
 const convertRecordsToIndonesiaTime = (records: any[]): any[] => {
   return records.map((r) => ({
@@ -237,8 +239,6 @@ const attendanceService = {
         datesWithData.add(dateStr);
       });
 
-      // Present/late only count once checkout is done — a check-in alone
-      // (even from earlier today) is treated as absent, not present.
       const userLate = records.filter((r) => r.status === "present" && r.reason && r.checkOut).length;
       const userPresent = records.filter((r) => r.status === "present" && !r.reason && r.checkOut).length;
       const userSick = records.filter((r) => r.status === "sick").length;
@@ -246,7 +246,6 @@ const attendanceService = {
       const rejectedSickPermit = records.filter((r) => (r.status === "sick" || r.status === "permit") && r.approval_status === "rejected").length;
       const incompleteCheckin = records.filter((r) => r.status === "present" && !r.checkOut).length;
 
-      // Hitung missing dates (No Report) — hari kerja Senin-Sabtu yang tidak ada di datesWithData
       let missingDateCount = 0;
       const currentDate = new Date(startOfPeriod);
       while (currentDate <= todayEnd) {
@@ -260,12 +259,30 @@ const attendanceService = {
 
       const userAbsent = rejectedSickPermit + incompleteCheckin + missingDateCount;
 
-      const counts: any = {};
-      if (userLate > 0) counts.late = userLate;
-      if (userPresent > 0) counts.present = userPresent;
-      if (userSick > 0) counts.sick = userSick;
-      if (userPermit > 0) counts.permit = userPermit;
-      if (userAbsent > 0) counts.absent = userAbsent;
+      // Semua field counts SELALU ditampilkan (termasuk yang bernilai 0),
+      // bukan hanya yang > 0.
+      const counts: any = {
+        late: userLate,
+        present: userPresent,
+        sick: userSick,
+        permit: userPermit,
+        absent: userAbsent,
+      };
+
+      // sp dihitung dari grand_total KPI bulan yang sama, hanya disisipkan
+      // (ke dalam counts) saat absent > 4.
+      if (userAbsent > 4) {
+        try {
+          const kpiSummary = await KPICountService.getMyKPISummary(userId, {
+            year: year ?? today.getFullYear(),
+            month: month ?? today.getMonth() + 1,
+          });
+          const spStatus = KPICountService.getSPStatus(kpiSummary.grand_total);
+          counts.sp = spStatus.sp;
+        } catch (error) {
+          // Jika gagal ambil KPI, biarkan counts tanpa sp daripada menggagalkan summary attendance.
+        }
+      }
 
       return { userId, userName: user.name, counts };
     }));
@@ -273,186 +290,177 @@ const attendanceService = {
     return userSummary;
   },
 
-  getAttendanceSummaryDetail: async (userId: Types.ObjectId, year?: number, month?: number, day?: number): Promise<any> => {
-    let attendanceRecords: IAttendance[];
+  getAttendanceSummaryDetail: async (
+  userId: Types.ObjectId,
+  year?: number,
+  month?: number,
+  day?: number
+): Promise<any> => {
+  const nowWib = DateTime.now().setZone("Asia/Jakarta");
+  const effectiveYear = year ?? nowWib.year;
+  const effectiveMonth = month ?? nowWib.month;
+  const attendanceRecords: IAttendance[] = await attendanceRepository.findAllWithDate({
+    userId,
+    year: effectiveYear,
+    month: effectiveMonth,
+    day,
+  });
 
-    if (year !== undefined || month !== undefined || day !== undefined) {
-      attendanceRecords = await attendanceRepository.findAllWithDate({ userId, year, month, day });
-    } else {
-      attendanceRecords = await attendanceRepository.findAll({ userId });
+  let userName = "Unknown User";
+  try {
+    const user = await userRepository.findUserById(userId.toString());
+    if (user) {
+      userName = user.name;
     }
+  } catch (error) {
+    userName = "Unknown User";
+  }
 
-    let userName = "Unknown User";
-    try {
-      const user = await userRepository.findUserById(userId.toString());
-      if (user) {
-        userName = user.name;
-      }
-    } catch (error) {
-      userName = "Unknown User";
-    }
+  const statusSummary: any[] = [];
 
-    const statusSummary: any[] = [];
-
-    // Present/late only count once checkout is done — a check-in alone
-    // (even from earlier today) is treated as absent, not present.
-
-    // Late - Present dengan reason
-    const lateRecords = attendanceRecords.filter((r) => r.status === "present" && r.reason && r.checkOut);
-    if (lateRecords.length > 0) {
-      statusSummary.push({
-        status: "late",
-        count: lateRecords.length,
-        records: convertRecordsToIndonesiaTime(
-          lateRecords.map((r) => ({
-            date: r.createdAt,
-            reason: r.reason,
-            attendanceStatus: r.status,
-          })),
-        ),
-      });
-    }
-
-    const presentRecords = attendanceRecords.filter((r) => r.status === "present" && !r.reason && r.checkOut);
-    if (presentRecords.length > 0) {
-      statusSummary.push({
-        status: "present",
-        count: presentRecords.length,
-        records: convertRecordsToIndonesiaTime(
-          presentRecords.map((r) => ({
-            date: r.createdAt,
-            attendanceStatus: r.status,
-          })),
-        ),
-      });
-    }
-
-    // Sick
-    const sickRecords = attendanceRecords.filter((r) => r.status === "sick");
-    if (sickRecords.length > 0) {
-      statusSummary.push({
-        status: "sick",
-        count: sickRecords.length,
-        records: convertRecordsToIndonesiaTime(
-          sickRecords.map((r) => ({
-            date: r.createdAt,
-            reason: r.reason || null,
-            attendanceStatus: r.status,
-            approvalStatus: r.approval_status || null,
-          })),
-        ),
-      });
-    }
-
-    // Permit/Leave
-    const permitRecords = attendanceRecords.filter((r) => r.status === "permit");
-    if (permitRecords.length > 0) {
-      statusSummary.push({
-        status: "permit",
-        count: permitRecords.length,
-        records: convertRecordsToIndonesiaTime(
-          permitRecords.map((r) => ({
-            date: r.createdAt,
-            reason: r.reason,
-            attendanceStatus: r.status,
-            approvalStatus: r.approval_status,
-          })),
-        ),
-      });
-    }
-
-    // Absent - Jika tidak ada data (sick, permit, present) atau jika sick/permit statusnya rejected
-    const rejectedSickPermit = attendanceRecords.filter((r) => (r.status === "sick" || r.status === "permit") && r.approval_status === "rejected");
-
-    // Checked in but never checked out - counts as absent, not present
-    const incompleteCheckinRecords = attendanceRecords.filter((r) => r.status === "present" && !r.checkOut);
-
-    // Get date range untuk calculate date yang gk ada
-    let startOfPeriod = new Date();
-    let endOfPeriod = new Date();
-
-    const today = new Date();
-    const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
-
-    if (year !== undefined && month !== undefined) {
-      startOfPeriod = new Date(year, month - 1, 1, 0, 0, 0, 0);
-      endOfPeriod = todayEnd;
-    } else if (year !== undefined) {
-      startOfPeriod = new Date(year, 0, 1, 0, 0, 0, 0);
-      endOfPeriod = todayEnd;
-    } else {
-      startOfPeriod = new Date(new Date().getFullYear(), new Date().getMonth(), 1, 0, 0, 0, 0);
-      endOfPeriod = todayEnd;
-    }
-
-    // Collect all dates that have data dari attendance records saja
-    const datesWithData = new Set<string>();
-    attendanceRecords.forEach((r) => {
-      const refDate = r.checkIn ?? r.createdAt ?? new Date();
-      const dateStr = dateHelper.getDate(new Date(refDate));
-      datesWithData.add(dateStr);
+  // --- Status Filtering ---
+  const lateRecords = attendanceRecords.filter((r) => r.status === "present" && r.reason && r.checkOut);
+  if (lateRecords.length > 0) {
+    statusSummary.push({
+      status: "late",
+      count: lateRecords.length,
+      records: convertRecordsToIndonesiaTime(
+        lateRecords.map((r) => ({
+          date: r.createdAt,
+          reason: r.reason,
+          attendanceStatus: r.status,
+        }))
+      ),
     });
+  }
 
-    // Find missing dates (no data) - exclude Sundays
-    const missingDates: Date[] = [];
-    const currentDate = new Date(startOfPeriod);
-    while (currentDate <= endOfPeriod) {
-      const dateStr = dateHelper.getDate(currentDate);
-      const dayOfWeek = currentDate.getDay();
+  const presentRecords = attendanceRecords.filter((r) => r.status === "present" && !r.reason && r.checkOut);
+  if (presentRecords.length > 0) {
+    statusSummary.push({
+      status: "present",
+      count: presentRecords.length,
+      records: convertRecordsToIndonesiaTime(
+        presentRecords.map((r) => ({
+          date: r.createdAt,
+          attendanceStatus: r.status,
+        }))
+      ),
+    });
+  }
 
-      // Only count Monday-Saturday (0 = Sunday, skip it)
-      if (dayOfWeek !== 0 && !datesWithData.has(dateStr)) {
-        missingDates.push(new Date(currentDate));
-      }
-      currentDate.setDate(currentDate.getDate() + 1);
+  const sickRecords = attendanceRecords.filter((r) => r.status === "sick");
+  if (sickRecords.length > 0) {
+    statusSummary.push({
+      status: "sick",
+      count: sickRecords.length,
+      records: convertRecordsToIndonesiaTime(
+        sickRecords.map((r) => ({
+          date: r.createdAt,
+          reason: r.reason || null,
+          attendanceStatus: r.status,
+          approvalStatus: r.approval_status || null,
+        }))
+      ),
+    });
+  }
+
+  const permitRecords = attendanceRecords.filter((r) => r.status === "permit");
+  if (permitRecords.length > 0) {
+    statusSummary.push({
+      status: "permit",
+      count: permitRecords.length,
+      records: convertRecordsToIndonesiaTime(
+        permitRecords.map((r) => ({
+          date: r.createdAt,
+          reason: r.reason,
+          attendanceStatus: r.status,
+          approvalStatus: r.approval_status,
+        }))
+      ),
+    });
+  }
+
+  const rejectedSickPermit = attendanceRecords.filter(
+    (r) => (r.status === "sick" || r.status === "permit") && r.approval_status === "rejected"
+  );
+
+  const incompleteCheckinRecords = attendanceRecords.filter((r) => r.status === "present" && !r.checkOut);
+
+  // --- FIXED: PERHITUNGAN RANGE HARI KERJA BERDASARKAN BULAN YANG DIPILIH ---
+  const startOfSelectedMonth = DateTime.local(effectiveYear, effectiveMonth, 1).setZone("Asia/Jakarta").startOf("day");
+  const endOfSelectedMonth = startOfSelectedMonth.endOf("month").endOf("day");
+
+  // Jika bulan yang dipilih adalah bulan berjalan, batas akhir = HARI INI
+  // Jika bulan yang lalu, batas akhir = AKHIR BULAN TERSEBUT
+  const isCurrentMonth = nowWib.year === effectiveYear && nowWib.month === effectiveMonth;
+  const endOfPeriod = isCurrentMonth ? nowWib.endOf("day") : endOfSelectedMonth;
+
+  // Collect dates that have data
+  const datesWithData = new Set<string>();
+  attendanceRecords.forEach((r) => {
+    const refDate = r.checkIn ?? r.createdAt ?? new Date();
+    const dateStr = dateHelper.getDate(new Date(refDate));
+    datesWithData.add(dateStr);
+  });
+
+  // Find missing dates HANYA di dalam rentang bulan yang bersangkutan
+  const missingDates: Date[] = [];
+  let currentDate = startOfSelectedMonth;
+
+  while (currentDate <= endOfPeriod) {
+    const dateStr = currentDate.toISODate(); // Format YYYY-MM-DD
+    const dayOfWeek = currentDate.weekday; // Luxon: 1 = Senin, 7 = Minggu
+
+    // Skip hari Minggu (7)
+    if (dayOfWeek !== 7 && dateStr && !datesWithData.has(dateStr)) {
+      missingDates.push(currentDate.toJSDate());
     }
+    currentDate = currentDate.plus({ days: 1 });
+  }
 
-    const absentRecords: any[] = [];
+  const absentRecords: any[] = [];
 
-    // Add rejected sick/permit as absent
-    rejectedSickPermit.forEach((r) => {
-      absentRecords.push({
-        date: r.createdAt,
-        reason: `${r.status} (rejected)`,
-        attendanceStatus: r.status,
-        approvalStatus: r.approval_status || null,
-      });
+  rejectedSickPermit.forEach((r) => {
+    absentRecords.push({
+      date: r.createdAt,
+      reason: `${r.status} (rejected)`,
+      attendanceStatus: r.status,
+      approvalStatus: r.approval_status || null,
     });
+  });
 
-    // Add checked-in-but-never-checked-out records as absent
-    incompleteCheckinRecords.forEach((r) => {
-      absentRecords.push({
-        date: r.createdAt,
-        reason: "Check-in without check-out",
-        attendanceStatus: r.status,
-        approvalStatus: null,
-      });
+  incompleteCheckinRecords.forEach((r) => {
+    absentRecords.push({
+      date: r.createdAt,
+      reason: "Check-in without check-out",
+      attendanceStatus: r.status,
+      approvalStatus: null,
     });
+  });
 
-    // Add missing dates as absent
-    missingDates.forEach((date) => {
-      absentRecords.push({
-        date,
-        reason: "No data",
-        attendanceStatus: "absent",
-        approvalStatus: null,
-      });
+  missingDates.forEach((date) => {
+    absentRecords.push({
+      date,
+      reason: "No data",
+      attendanceStatus: "absent",
+      approvalStatus: null,
     });
+  });
 
-    if (absentRecords.length > 0) {
-      statusSummary.push({
-        status: "absent",
-        count: absentRecords.length,
-        records: convertRecordsToIndonesiaTime(absentRecords),
-      });
-    }
+  if (absentRecords.length > 0) {
+    statusSummary.push({
+      status: "absent",
+      count: absentRecords.length,
+      records: convertRecordsToIndonesiaTime(absentRecords),
+    });
+  }
 
-    return {
-      userId,
-      userName,
-      statusSummary,
-    };
-  },
+  return {
+    userId,
+    userName,
+    statusSummary,
+  };
+},
 
   getAttendanceDetailSummaryAll: async (year?: number, month?: number): Promise<any> => {
     let attendanceRecords: IAttendance[];
