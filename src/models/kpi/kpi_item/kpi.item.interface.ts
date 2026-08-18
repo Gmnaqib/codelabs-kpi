@@ -16,6 +16,9 @@ export interface IKPIDetail {
   id_kpi_master: Types.ObjectId;
   label: KPILabel;
   max_activity: number;
+  is_active?: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export default IKPIMaster;

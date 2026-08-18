@@ -1,10 +1,20 @@
 import competitionRepository from "../repository/competition.respository";
 import ICompetition, { CompetitionType, CompetitionStatus } from "../models/competition/competition.interface";
 import { validateKpiDetailKementerian } from "../helper/kpi.detail.validator";
+import KPISnapshotHelper from "../helper/kpiSnapshotHelper";
+import { KPIDetail } from "../models/kpi/kpi_item/kpi.item.schema";
 import { Types } from "mongoose";
 
 const CompetitionService = {
-  addCompetition: async (userId: string, name: string, description: string, deadline: string, link: string, type: CompetitionType, id_kpi_detail?: string): Promise<ICompetition> => {
+  addCompetition: async (
+    userId: string,
+    name: string,
+    description: string,
+    deadline: string,
+    link: string,
+    type: CompetitionType,
+    id_kpi_detail?: string
+  ): Promise<ICompetition> => {
     if (id_kpi_detail) {
       await validateKpiDetailKementerian(id_kpi_detail, "competition");
     }
@@ -16,6 +26,9 @@ const CompetitionService = {
       deadline: new Date(deadline),
       link,
       type,
+      status: CompetitionStatus.Pending,
+      earned_point: 0,
+      kpi_snapshot: undefined,
       ...(id_kpi_detail && { id_kpi_detail: new Types.ObjectId(id_kpi_detail) }),
     });
   },
@@ -43,7 +56,18 @@ const CompetitionService = {
     return await competitionRepository.findMyCompetitions(userId, year, month);
   },
 
-  updateMyCompetition: async (id: string, userId: string, updateData: { name?: string; description?: string; deadline?: string; link?: string; type?: CompetitionType; id_kpi_detail?: string }): Promise<any> => {
+  updateMyCompetition: async (
+    id: string,
+    userId: string,
+    updateData: {
+      name?: string;
+      description?: string;
+      deadline?: string;
+      link?: string;
+      type?: CompetitionType;
+      id_kpi_detail?: string;
+    }
+  ): Promise<any> => {
     const competition = await competitionRepository.findCompetitionById(id);
     if (!competition) throw new Error("Competition not found");
     if (competition.userId.toString() !== userId) throw new Error("You can only update your own competitions");
@@ -71,7 +95,19 @@ const CompetitionService = {
     return competition;
   },
 
-  updateCompetition: async (id: string, updateData: { userId?: string; name?: string; description?: string; deadline?: string; link?: string; status?: CompetitionStatus; type?: CompetitionType; id_kpi_detail?: string }): Promise<ICompetition> => {
+  updateCompetition: async (
+    id: string,
+    updateData: {
+      userId?: string;
+      name?: string;
+      description?: string;
+      deadline?: string;
+      link?: string;
+      status?: CompetitionStatus;
+      type?: CompetitionType;
+      id_kpi_detail?: string;
+    }
+  ): Promise<ICompetition> => {
     const competition = await competitionRepository.findCompetitionById(id);
     if (!competition) throw new Error("Competition not found");
 
@@ -80,13 +116,33 @@ const CompetitionService = {
     }
 
     const { name, description, deadline, link, status, type, id_kpi_detail } = updateData;
-    competition.name = name || competition.name;
-    competition.description = description || competition.description;
-    competition.deadline = deadline ? new Date(deadline) : competition.deadline;
-    competition.link = link || competition.link;
-    competition.status = status || competition.status;
-    competition.type = type || competition.type;
+    if (name !== undefined) competition.name = name;
+    if (description !== undefined) competition.description = description;
+    if (deadline !== undefined) competition.deadline = new Date(deadline);
+    if (link !== undefined) competition.link = link;
+    if (type !== undefined) competition.type = type;
     if (id_kpi_detail !== undefined) competition.id_kpi_detail = new Types.ObjectId(id_kpi_detail);
+
+    // Kunci Snapshot & Hitung earned_point jika status diupdate
+    if (status !== undefined) {
+      competition.status = status;
+
+      if (status === CompetitionStatus.Approved) {
+        const targetKpiDetailId = id_kpi_detail || competition.id_kpi_detail;
+        if (targetKpiDetailId) {
+          const kpiDetail = await KPIDetail.findById(targetKpiDetailId);
+          if (!kpiDetail) throw new Error("KPI Detail item not found");
+
+          // Buat Snapshot & Hitung Poin Normal (Competition)
+          const snapshot = KPISnapshotHelper.createSnapshot(kpiDetail as any);
+          competition.kpi_snapshot = snapshot;
+          competition.earned_point = KPISnapshotHelper.calculateNormalPoint(snapshot);
+        }
+      } else {
+        // Jika status Pending atau Rejected, poin tidak dihitung
+        competition.earned_point = 0;
+      }
+    }
 
     await competition.save();
     return competition;

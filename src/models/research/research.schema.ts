@@ -1,5 +1,6 @@
 import { Schema, model } from "mongoose";
 import IResearch, { RESEARCH_STATUS_VALUES, progressStatus } from "./research.interface";
+import { kpiSnapshotSchema } from "../kpi/kpi_snapshot.interface";
 
 const researchSchema = new Schema<IResearch>(
   {
@@ -26,6 +27,14 @@ const researchSchema = new Schema<IResearch>(
       min: 0,
       max: 5,
       required: false,
+    },
+    earned_point: {
+      type: Number,
+      default: 0,
+    },
+    kpi_snapshot: {
+      type: kpiSnapshotSchema,
+      default: null,
     },
   },
   { timestamps: true },

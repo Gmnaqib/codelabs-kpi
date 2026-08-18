@@ -12,6 +12,8 @@ import { CompetitionStatus } from "../models/competition/competition.interface";
 import { ScheduleType } from "../models/schedule/schedule.interface";
 import { Types } from "mongoose";
 
+// ─── Helper Functions & Filters ──────────────────────────────────────────────
+
 const buildDateFilter = (dateFilter?: { year: number; month?: number }) => {
   if (!dateFilter) return null;
   if (dateFilter.month) {
@@ -26,20 +28,29 @@ const buildDateFilter = (dateFilter?: { year: number; month?: number }) => {
   };
 };
 
+/**
+ * Fallback Kalkulasi Normal (Operational, Competition)
+ */
 const hitungPoint = (point: number, maxActivity: number, jumlahActivity: number, label: string): number => {
-  const pointPerActivity = point / maxActivity;
+  const maxAct = maxActivity || 1;
+  const pointPerActivity = point / maxAct;
   const raw = pointPerActivity * jumlahActivity;
   const result = label === "REQUIRED" ? Math.min(raw, point) : raw;
   return Math.floor(result * 10) / 10;
 };
 
+/**
+ * Fallback Kalkulasi Range 0-5 (Research, Branding)
+ */
 const hitungPointRange = (point: number, maxActivity: number, nilaiStatus: number, label: string): number => {
-  const pointRangePer1 = point / maxActivity / 5;
+  const maxAct = maxActivity || 1;
+  const pointRangePer1 = point / maxAct / 5;
   const raw = pointRangePer1 * nilaiStatus;
   const result = label === "REQUIRED" ? Math.min(raw, point) : raw;
   return Math.floor(result * 10) / 10;
 };
 
+// ─── SP (Surat Peringatan) Thresholds ─────────────────────────────────────────
 
 const SP_THRESHOLDS: { sp: 1 | 2 | 3; max: number }[] = [
   { sp: 3, max: 11 },
@@ -53,8 +64,11 @@ const getSPStatus = (grandTotal: number): { sp: 1 | 2 | 3 | null; grand_total: n
     sp: matched ? matched.sp : null,
     grand_total: grandTotal,
   };
-};const KPICountService = {
+};
 
+// ─── KPICountService Implementation ──────────────────────────────────────────
+
+const KPICountService = {
   getMyKPISummary: async (userId: string, dateFilter?: { year: number; month?: number }) => {
     const userObjectId = new Types.ObjectId(userId);
     const user = await userRepository.findUserById(userId);
@@ -80,6 +94,7 @@ const getSPStatus = (grandTotal: number): { sp: 1 | 2 | 3 | null; grand_total: n
 
         if (kementerian === "operational") {
           const effectiveRange = dateHelper.applyCutoffToRange(dateRange ?? undefined, cutoffDate);
+          
           const attendanceRecords = await attendanceRepository.findAll({
             userId: userObjectId,
             id_kpi_detail: detail._id,
@@ -87,6 +102,7 @@ const getSPStatus = (grandTotal: number): { sp: 1 | 2 | 3 | null; grand_total: n
             checkOut: { $ne: null } as any,
             ...(effectiveRange && { createdAt: effectiveRange }),
           });
+
           const operationalRecords = await operationalRecordRepository.findRecordsWithFilters({
             userId,
             id_kpi_detail: detailId,
@@ -95,8 +111,19 @@ const getSPStatus = (grandTotal: number): { sp: 1 | 2 | 3 | null; grand_total: n
               endDate: effectiveRange.$lte,
             }),
           });
+
           jumlah_activity = attendanceRecords.length + operationalRecords.length;
-          point_akhir = hitungPoint(detail.point, detail.max_activity, jumlah_activity, detail.label);
+
+          // Ambil total earned_point dari operationalRecords jika ada snapshot, gabungkan dengan attendance
+          const operationalPoints = operationalRecords.reduce((sum: number, r: any) => {
+            return sum + (typeof r.earned_point === "number" ? r.earned_point : (detail.point / (detail.max_activity || 1)));
+          }, 0);
+
+          const attendancePoints = attendanceRecords.length * (detail.point / (detail.max_activity || 1));
+          const totalRaw = operationalPoints + attendancePoints;
+
+          point_akhir = detail.label === "REQUIRED" ? Math.min(totalRaw, detail.point) : totalRaw;
+          point_akhir = Math.floor(point_akhir * 10) / 10;
 
         } else if (kementerian === "research") {
           const records = await researchRepository.findResearchWithFilters({
@@ -107,10 +134,17 @@ const getSPStatus = (grandTotal: number): { sp: 1 | 2 | 3 | null; grand_total: n
             ...(cutoffDate && { cutoffDate }),
           });
           jumlah_activity = records.length;
+
+          // Gunakan earned_point terkunci jika ada, jika tidak fallback ke hitungPointRange
           const rawTotal = records.reduce((sum: number, r: any) => {
-            return sum + hitungPointRange(detail.point, detail.max_activity, r.status || 0, detail.label);
+            const point = typeof r.earned_point === "number" 
+              ? r.earned_point 
+              : hitungPointRange(detail.point, detail.max_activity, r.status || 0, detail.label);
+            return sum + point;
           }, 0);
-          point_akhir = Math.floor(rawTotal * 10) / 10;
+
+          point_akhir = detail.label === "REQUIRED" ? Math.min(rawTotal, detail.point) : rawTotal;
+          point_akhir = Math.floor(point_akhir * 10) / 10;
 
         } else if (kementerian === "branding") {
           const records = await brandingRepository.findBrandingsByFilter(
@@ -119,10 +153,17 @@ const getSPStatus = (grandTotal: number): { sp: 1 | 2 | 3 | null; grand_total: n
             cutoffDate
           );
           jumlah_activity = records.length;
+
+          // Gunakan earned_point terkunci jika ada, jika tidak fallback ke hitungPointRange
           const rawBranding = records.reduce((sum: number, r: any) => {
-            return sum + hitungPointRange(detail.point, detail.max_activity, r.status || 0, detail.label);
+            const point = typeof r.earned_point === "number" 
+              ? r.earned_point 
+              : hitungPointRange(detail.point, detail.max_activity, r.status || 0, detail.label);
+            return sum + point;
           }, 0);
-          point_akhir = Math.floor(rawBranding * 10) / 10;
+
+          point_akhir = detail.label === "REQUIRED" ? Math.min(rawBranding, detail.point) : rawBranding;
+          point_akhir = Math.floor(point_akhir * 10) / 10;
 
         } else if (kementerian === "competition") {
           const records = await competitionRepository.findCompetitionsByFilter(
@@ -131,9 +172,20 @@ const getSPStatus = (grandTotal: number): { sp: 1 | 2 | 3 | null; grand_total: n
             cutoffDate
           );
           jumlah_activity = records.length;
-          point_akhir = hitungPoint(detail.point, detail.max_activity, jumlah_activity, detail.label);
+
+          // Gunakan earned_point terkunci jika ada, jika tidak fallback ke hitungPoint
+          const rawCompetition = records.reduce((sum: number, r: any) => {
+            const point = typeof r.earned_point === "number" 
+              ? r.earned_point 
+              : (detail.point / (detail.max_activity || 1));
+            return sum + point;
+          }, 0);
+
+          point_akhir = detail.label === "REQUIRED" ? Math.min(rawCompetition, detail.point) : rawCompetition;
+          point_akhir = Math.floor(point_akhir * 10) / 10;
         }
 
+        // Penggabungan dengan Baseline Data Historis (jika ada)
         const frozenDetail = baseline?.detailSnapshot?.find(
           (d: any) => d.kpiDetailId.toString() === detailId
         );
@@ -149,7 +201,7 @@ const getSPStatus = (grandTotal: number): { sp: 1 | 2 | 3 | null; grand_total: n
           kpiDetailId: detail._id,
           kpi_item: detail.kpi_item,
           label: detail.label,
-          point_per_activity: parseFloat(String(Math.floor((detail.point / detail.max_activity) * 10) / 10)),
+          point_per_activity: parseFloat(String(Math.floor((detail.point / (detail.max_activity || 1)) * 10) / 10)),
           jumlah_activity,
           point_akhir,
         });
@@ -166,6 +218,7 @@ const getSPStatus = (grandTotal: number): { sp: 1 | 2 | 3 | null; grand_total: n
         }
       }
 
+      // Memasukkan detail yang telah di-archive/frozen
       if (baseline) {
         const liveDetailIds = new Set(details.map((d: any) => d._id.toString()));
         for (const frozenDetail of baseline.detailSnapshot ?? []) {
@@ -288,17 +341,29 @@ const getSPStatus = (grandTotal: number): { sp: 1 | 2 | 3 | null; grand_total: n
       ...(dateRange && { createdAt: dateRange }),
     })).length : 0;
 
-    const countPicket = picketDetail ? (await operationalRecordRepository.findRecordsWithFilters({
+    const picketRecords = picketDetail ? await operationalRecordRepository.findRecordsWithFilters({
       userId, id_kpi_detail: picketDetail._id.toString(), type: ScheduleType.picket, startDate, endDate,
-    })).length : 0;
+    }) : [];
 
-    const countThematic = thematicDetail ? (await operationalRecordRepository.findRecordsWithFilters({
+    const thematicRecords = thematicDetail ? await operationalRecordRepository.findRecordsWithFilters({
       userId, id_kpi_detail: thematicDetail._id.toString(), type: ScheduleType.thematic, startDate, endDate,
-    })).length : 0;
+    }) : [];
 
+    const countPicket = picketRecords.length;
+    const countThematic = thematicRecords.length;
+
+    // Kalkulasi poin dengan earned_point prioritas
     const totalAttendance = attendanceDetail ? hitungPoint(attendanceDetail.point, attendanceDetail.max_activity, countAttendance, attendanceDetail.label) : 0;
-    const totalPicket = picketDetail ? hitungPoint(picketDetail.point, picketDetail.max_activity, countPicket, picketDetail.label) : 0;
-    const totalThematic = thematicDetail ? hitungPoint(thematicDetail.point, thematicDetail.max_activity, countThematic, thematicDetail.label) : 0;
+    
+    const rawPicket = picketRecords.reduce((sum: number, r: any) => {
+      return sum + (typeof r.earned_point === "number" ? r.earned_point : (picketDetail.point / (picketDetail.max_activity || 1)));
+    }, 0);
+    const totalPicket = picketDetail && picketDetail.label === "REQUIRED" ? Math.min(rawPicket, picketDetail.point) : rawPicket;
+
+    const rawThematic = thematicRecords.reduce((sum: number, r: any) => {
+      return sum + (typeof r.earned_point === "number" ? r.earned_point : (thematicDetail.point / (thematicDetail.max_activity || 1)));
+    }, 0);
+    const totalThematic = thematicDetail && thematicDetail.label === "REQUIRED" ? Math.min(rawThematic, thematicDetail.point) : rawThematic;
 
     return {
       totalAttendance: countAttendance,
@@ -330,10 +395,16 @@ const getSPStatus = (grandTotal: number): { sp: 1 | 2 | 3 | null; grand_total: n
         ...(dateFilter && { date: dateFilter }),
       });
       totalApproved += records.length;
+      
       const rawTotal = records.reduce((sum: number, r: any) => {
-        return sum + hitungPointRange(detail.point, detail.max_activity, r.status || 0, detail.label);
+        const point = typeof r.earned_point === "number"
+          ? r.earned_point
+          : hitungPointRange(detail.point, detail.max_activity, r.status || 0, detail.label);
+        return sum + point;
       }, 0);
-      totalPoint += rawTotal;
+
+      const cappedDetail = detail.label === "REQUIRED" ? Math.min(rawTotal, detail.point) : rawTotal;
+      totalPoint += cappedDetail;
     }
 
     return {
@@ -362,10 +433,15 @@ const getSPStatus = (grandTotal: number): { sp: 1 | 2 | 3 | null; grand_total: n
           ...(dateFilter && { date: dateFilter }),
         });
         const count = records.length;
+        
         const raw = records.reduce((sum: number, r: any) => {
-          return sum + hitungPointRange(detail.point, detail.max_activity, r.status || 0, detail.label);
+          const point = typeof r.earned_point === "number"
+            ? r.earned_point
+            : hitungPointRange(detail.point, detail.max_activity, r.status || 0, detail.label);
+          return sum + point;
         }, 0);
-        const total = Math.floor(raw * 10) / 10;
+
+        const total = Math.floor((detail.label === "REQUIRED" ? Math.min(raw, detail.point) : raw) * 10) / 10;
         byCategory[detail.kpi_item] = { count, total };
         totalPoints += total;
       }
@@ -404,6 +480,8 @@ const getSPStatus = (grandTotal: number): { sp: 1 | 2 | 3 | null; grand_total: n
       }
 
       let count = 0;
+      let rawTotal = 0;
+
       if (type) {
         const records = await operationalRecordRepository.findRecordsWithFilters({
           userId,
@@ -413,6 +491,9 @@ const getSPStatus = (grandTotal: number): { sp: 1 | 2 | 3 | null; grand_total: n
           endDate,
         });
         count = records.length;
+        rawTotal = records.reduce((sum: number, r: any) => {
+          return sum + (typeof r.earned_point === "number" ? r.earned_point : (detail.point / (detail.max_activity || 1)));
+        }, 0);
       } else {
         const records = await attendanceRepository.findAll({
           userId: userObjectId,
@@ -422,9 +503,10 @@ const getSPStatus = (grandTotal: number): { sp: 1 | 2 | 3 | null; grand_total: n
           ...(dateRange && { createdAt: dateRange }),
         });
         count = records.length;
+        rawTotal = count * (detail.point / (detail.max_activity || 1));
       }
 
-      const total = hitungPoint(detail.point, detail.max_activity, count, detail.label);
+      const total = Math.floor((detail.label === "REQUIRED" ? Math.min(rawTotal, detail.point) : rawTotal) * 10) / 10;
       return { count, code: detail.kpi_item, point: detail.point, total };
     };
 
@@ -452,7 +534,6 @@ const getSPStatus = (grandTotal: number): { sp: 1 | 2 | 3 | null; grand_total: n
     return results.sort((a, b) => b.totalPoints - a.totalPoints);
   },
 
-  // GET /kpi/me/sp?year=&month=
   getMySPStatus: async (userId: string, dateFilter?: { year: number; month?: number }) => {
     const summary = await KPICountService.getMyKPISummary(userId, dateFilter);
     const status = getSPStatus(summary.grand_total);
@@ -465,7 +546,9 @@ const getSPStatus = (grandTotal: number): { sp: 1 | 2 | 3 | null; grand_total: n
       ...status,
     };
   },
+  
   getSPStatus,
+  
   getAllSPStatus: async (dateFilter?: { year: number; month?: number }) => {
     const summaries = await KPICountService.getAllKPISummary(dateFilter);
 

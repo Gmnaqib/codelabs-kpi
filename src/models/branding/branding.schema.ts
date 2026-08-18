@@ -1,6 +1,7 @@
 import { Schema, model } from "mongoose";
 import mongoose from "mongoose";
 import IBranding, { BRANDING_STATUS_VALUES, brandingLevel } from "./branding.interface";
+import { kpiSnapshotSchema } from "../kpi/kpi_snapshot.interface";
 
 const brandingSchema = new Schema<IBranding>(
   {
@@ -25,6 +26,14 @@ const brandingSchema = new Schema<IBranding>(
       type: String,
       enum: Object.values(brandingLevel),
       required: true,
+    },
+    earned_point: {
+      type: Number,
+      default: 0,
+    },
+    kpi_snapshot: {
+      type: kpiSnapshotSchema,
+      default: null,
     },
   },
   { timestamps: true }

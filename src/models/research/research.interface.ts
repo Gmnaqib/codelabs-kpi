@@ -1,14 +1,19 @@
 import { Types } from "mongoose";
+import { IKPISnapshot } from "../kpi/kpi_snapshot.interface";
 
 interface IResearch {
   userId: Types.ObjectId;
-  week: number;
   id_kpi_detail: Types.ObjectId;
+  week: number;
   title: string;
   link: string;
   progress: progressStatus;
   challenge?: string;
   status?: ResearchStatus;
+  earned_point?: number;        
+  kpi_snapshot?: IKPISnapshot;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export enum progressStatus {

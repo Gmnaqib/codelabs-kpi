@@ -1,4 +1,5 @@
 import { Types } from "mongoose";
+import { IKPISnapshot } from "../kpi/kpi_snapshot.interface";
 
 export const statusBranding = {
   NOT_SUITABLE: 0,
@@ -35,8 +36,11 @@ interface IBranding {
   research: string;
   level: string;
   link: string;
-  status?: BrandingStatus;  // null = belum direview, 0-5 = nilai dari admin
+  status?: BrandingStatus; 
+  earned_point?: number;     
+  kpi_snapshot?: IKPISnapshot;
   createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export default IBranding;

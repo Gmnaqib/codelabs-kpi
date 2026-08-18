@@ -3,6 +3,8 @@ import operationalRepository from "../repository/operationalRecord.repository";
 import scheduleRepository from "../repository/schedule.repository";
 import { validateKpiDetailKementerian, resolveKpiDetailId } from "../helper/kpi.detail.validator";
 import { ScheduleType } from "../models/schedule/schedule.interface";
+import KPISnapshotHelper from "../helper/kpiSnapshotHelper";
+import { KPIDetail } from "../models/kpi/kpi_item/kpi.item.schema";
 
 const operationalRecordService = {
   createOperationalRecord: async (recordData: IOperationalRecord): Promise<IOperationalRecord> => {
@@ -12,6 +14,16 @@ const operationalRecordService = {
       // FE belum pernah mengirim id_kpi_detail saat checkin picket/thematic, jadi dicocokkan otomatis dari kpi_item yang namanya sama dengan type
       const resolvedId = await resolveKpiDetailId("operational", recordData.type);
       if (resolvedId) recordData.id_kpi_detail = resolvedId;
+    }
+
+    // 1. Kunci Snapshot & Hitung earned_point Normal jika id_kpi_detail tersedia
+    if (recordData.id_kpi_detail) {
+      const kpiDetail = await KPIDetail.findById(recordData.id_kpi_detail);
+      if (kpiDetail) {
+        const snapshot = KPISnapshotHelper.createSnapshot(kpiDetail as any);
+        recordData.kpi_snapshot = snapshot;
+        recordData.earned_point = KPISnapshotHelper.calculateNormalPoint(snapshot);
+      }
     }
 
     const scheduleId = recordData.scheduleId;
@@ -78,7 +90,15 @@ const operationalRecordService = {
     return await operationalRepository.deleteRecordById(recordId);
   },
 
-  getOperationalRecordsCount: async (filters?: { scheduleId?: string; userId?: string; type?: ScheduleType; startDate?: Date; endDate?: Date; date?: Date; status?: string }): Promise<number> => {
+  getOperationalRecordsCount: async (filters?: {
+    scheduleId?: string;
+    userId?: string;
+    type?: ScheduleType;
+    startDate?: Date;
+    endDate?: Date;
+    date?: Date;
+    status?: string;
+  }): Promise<number> => {
     return operationalRepository.countRecordsWithFilters(filters || {});
   },
 

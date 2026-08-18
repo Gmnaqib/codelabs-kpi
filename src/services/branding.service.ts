@@ -1,10 +1,20 @@
 import brandingRepository from "../repository/branding.respository";
 import IBranding, { BrandingStatus, brandingLevel } from "../models/branding/branding.interface";
 import { validateKpiDetailKementerian } from "../helper/kpi.detail.validator";
+import KPISnapshotHelper from "../helper/kpiSnapshotHelper";
+import { KPIDetail } from "../models/kpi/kpi_item/kpi.item.schema";
 import { Types } from "mongoose";
 
 const BrandingService = {
-  addBranding: async (userId: string, name: string, description: string, link: string, research: string, level: brandingLevel, id_kpi_detail?: string): Promise<IBranding> => {
+  addBranding: async (
+    userId: string,
+    name: string,
+    description: string,
+    link: string,
+    research: string,
+    level: brandingLevel,
+    id_kpi_detail?: string
+  ): Promise<IBranding> => {
     if (id_kpi_detail) {
       await validateKpiDetailKementerian(id_kpi_detail, "branding");
     }
@@ -17,6 +27,8 @@ const BrandingService = {
       research,
       level,
       status: undefined,
+      earned_point: 0,
+      kpi_snapshot: undefined,
       ...(id_kpi_detail && { id_kpi_detail: new Types.ObjectId(id_kpi_detail) }),
     });
   },
@@ -50,7 +62,18 @@ const BrandingService = {
     return { total: result[0].total, brandings: result[0].brandings };
   },
 
-  updateMyBranding: async (id: string, userId: string, updateData: { name?: string; description?: string; link?: string; research?: string; level?: brandingLevel; id_kpi_detail?: string }): Promise<any> => {
+  updateMyBranding: async (
+    id: string,
+    userId: string,
+    updateData: {
+      name?: string;
+      description?: string;
+      link?: string;
+      research?: string;
+      level?: brandingLevel;
+      id_kpi_detail?: string;
+    }
+  ): Promise<any> => {
     const branding = await brandingRepository.findBrandingById(id);
     if (!branding) throw new Error("Branding not found");
     if (branding.userId.toString() !== userId) throw new Error("You can only update your own brandings");
@@ -78,7 +101,18 @@ const BrandingService = {
     return branding;
   },
 
-  updateBranding: async (id: string, updateData: { name?: string; description?: string; link?: string; status?: BrandingStatus; research?: string; level?: brandingLevel; id_kpi_detail?: string }): Promise<IBranding> => {
+  updateBranding: async (
+    id: string,
+    updateData: {
+      name?: string;
+      description?: string;
+      link?: string;
+      status?: BrandingStatus;
+      research?: string;
+      level?: brandingLevel;
+      id_kpi_detail?: string;
+    }
+  ): Promise<IBranding> => {
     const branding = await brandingRepository.findBrandingById(id);
     if (!branding) throw new Error("Branding not found");
 
@@ -90,10 +124,25 @@ const BrandingService = {
     if (name !== undefined) branding.name = name;
     if (description !== undefined) branding.description = description;
     if (link !== undefined) branding.link = link;
-    if (status !== undefined) branding.status = status;
     if (research !== undefined) branding.research = research;
     if (level !== undefined) branding.level = level;
     if (id_kpi_detail !== undefined) branding.id_kpi_detail = new Types.ObjectId(id_kpi_detail);
+
+    // Kunci Snapshot & Hitung earned_point saat Admin memberikan Review Status (0 - 5)
+    if (status !== undefined) {
+      branding.status = status;
+
+      const targetKpiDetailId = id_kpi_detail || branding.id_kpi_detail;
+      if (targetKpiDetailId) {
+        const kpiDetail = await KPIDetail.findById(targetKpiDetailId);
+        if (!kpiDetail) throw new Error("KPI Detail item not found");
+
+        // Buat Snapshot & Hitung Poin (Range 0 - 5)
+        const snapshot = KPISnapshotHelper.createSnapshot(kpiDetail as any);
+        branding.kpi_snapshot = snapshot;
+        branding.earned_point = KPISnapshotHelper.calculateRangePoint(snapshot, status);
+      }
+    }
 
     await branding.save();
     return branding;

@@ -4,15 +4,13 @@ import response from "../helper/response";
 import KPIItemService from "../services/kpi.services";
 
 const KPIItemController = {
-  // ─── KPI Master ─────────────────────────────────────────────────────────────
-
   addMaster: async (req: AuthRequest, res: Response): Promise<any> => {
     try {
       const { kementerian, point } = req.body;
       const data = await KPIItemService.addMaster({ kementerian, point });
       return response({ res, code: 201, message: "KPI master created successfully", data });
     } catch (error: any) {
-      return response({ res, code: 500, message: error.message });
+      return response({ res, code: 400, message: error.message });
     }
   },
 
@@ -36,7 +34,6 @@ const KPIItemController = {
     }
   },
 
-  // GET /kpi/master/:kementerian/details
   getMasterWithDetails: async (req: Request, res: Response): Promise<any> => {
     try {
       const kementerian = req.params.kementerian as string;
@@ -66,7 +63,7 @@ const KPIItemController = {
       if (!data) return response({ res, code: 404, message: "KPI master not found" });
       return response({ res, code: 200, message: "KPI master updated successfully", data });
     } catch (error: any) {
-      return response({ res, code: 500, message: error.message });
+      return response({ res, code: 400, message: error.message });
     }
   },
 
@@ -77,18 +74,16 @@ const KPIItemController = {
       if (!data) return response({ res, code: 404, message: "KPI master not found" });
       return response({ res, code: 200, message: "KPI master deleted successfully", data });
     } catch (error: any) {
-      return response({ res, code: 500, message: error.message });
+      return response({ res, code: 400, message: error.message });
     }
   },
-
-  // ─── KPI Detail ─────────────────────────────────────────────────────────────
 
   addDetail: async (req: AuthRequest, res: Response): Promise<any> => {
     try {
       const data = await KPIItemService.addDetail(req.body);
       return response({ res, code: 201, message: "KPI detail created successfully", data });
     } catch (error: any) {
-      return response({ res, code: 500, message: error.message });
+      return response({ res, code: 400, message: error.message });
     }
   },
 
@@ -118,18 +113,25 @@ const KPIItemController = {
       if (!data) return response({ res, code: 404, message: "KPI detail not found" });
       return response({ res, code: 200, message: "KPI detail updated successfully", data });
     } catch (error: any) {
-      return response({ res, code: 500, message: error.message });
+      return response({ res, code: 400, message: error.message });
     }
   },
 
   deleteDetail: async (req: AuthRequest, res: Response): Promise<any> => {
     try {
       const id = req.params.id as string;
+      // Memanggil fungsi soft delete pada service (mengubah is_active menjadi false)
       const data = await KPIItemService.deleteDetail(id);
       if (!data) return response({ res, code: 404, message: "KPI detail not found" });
-      return response({ res, code: 200, message: "KPI detail deleted successfully", data });
+      
+      return response({ 
+        res, 
+        code: 200, 
+        message: "KPI detail deleted (archived) successfully", 
+        data 
+      });
     } catch (error: any) {
-      return response({ res, code: 500, message: error.message });
+      return response({ res, code: 400, message: error.message });
     }
   },
 };

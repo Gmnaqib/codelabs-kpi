@@ -1,7 +1,7 @@
 import { Schema, model } from "mongoose";
 import mongoose from "mongoose";
-import ICompetition from "./competition.interface";
-import { CompetitionStatus, CompetitionType } from "./competition.interface";
+import ICompetition, { CompetitionStatus, CompetitionType } from "./competition.interface";
+import { kpiSnapshotSchema } from "../kpi/kpi_snapshot.interface";
 
 const competitionSchema = new Schema<ICompetition>(
   {
@@ -12,15 +12,23 @@ const competitionSchema = new Schema<ICompetition>(
     deadline: { type: Date, required: true },
     link: { type: String, required: true },
     status: {
-      type: String,
-      enum: Object.values(CompetitionStatus),
-      default: CompetitionStatus.Pending,
-      required: true,
+        type: String,
+        enum: Object.values(CompetitionStatus),
+        default: CompetitionStatus.Pending,
+        required: true,
     },
     type: {
-      type: String,
-      enum: Object.values(CompetitionType),
-      required: true,
+        type: String,
+        enum: Object.values(CompetitionType),
+        required: true,
+    },
+    earned_point: {
+        type: Number,
+        default: 0,
+    },
+    kpi_snapshot: {
+        type: kpiSnapshotSchema,
+        default: null,
     },
   },
   { timestamps: true }
