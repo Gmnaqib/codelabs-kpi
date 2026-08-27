@@ -296,7 +296,7 @@ const attendanceService = {
             year: year ?? today.getFullYear(),
             month: month ?? today.getMonth() + 1,
           });
-          const spStatus = KPICountService.getSPStatus(kpiSummary.grand_total);
+          const spStatus = await KPICountService.getSPStatus(kpiSummary.grand_total);
           counts.sp = spStatus.sp;
         } catch (error) {
           // Jika gagal ambil KPI, biarkan counts tanpa sp daripada menggagalkan summary attendance.

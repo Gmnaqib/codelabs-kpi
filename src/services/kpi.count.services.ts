@@ -6,6 +6,7 @@ import brandingRepository from "../repository/branding.respository";
 import competitionRepository from "../repository/competition.respository";
 import userRepository from "../repository/user.repository";
 import KPIBaselineRepository from "../repository/kpi.baseline.repository";
+import spSettingService from "./spSetting.service";
 import dateHelper from "../helper/dateHelper";
 import { attendanceStatus } from "../models/attendance/attendance.Interface";
 import { CompetitionStatus } from "../models/competition/competition.interface";
@@ -50,23 +51,10 @@ const hitungPointRange = (point: number, maxActivity: number, nilaiStatus: numbe
   return Math.floor(result * 10) / 10;
 };
 
-// ─── SP (Surat Peringatan) Thresholds ─────────────────────────────────────────
-
-const SP_THRESHOLDS: { sp: 1 | 2 | 3; max: number }[] = [
-  { sp: 3, max: 11 },
-  { sp: 2, max: 19 },
-  { sp: 1, max: 27 },
-];
-
-const getSPStatus = (grandTotal: number): { sp: 1 | 2 | 3 | null; grand_total: number } => {
-  const matched = SP_THRESHOLDS.find((t) => grandTotal <= t.max);
-  return {
-    sp: matched ? matched.sp : null,
-    grand_total: grandTotal,
-  };
-};
-
 // ─── KPICountService Implementation ──────────────────────────────────────────
+// SP (Surat Peringatan) thresholds are no longer hardcoded here — they're
+// managed dynamically via the SPSetting collection (see spSetting.service.ts
+// and the /sp-setting CRUD routes). getSPStatus below just delegates to it.
 
 const KPICountService = {
   getMyKPISummary: async (userId: string, dateFilter?: { year: number; month?: number }) => {
@@ -536,7 +524,7 @@ const KPICountService = {
 
   getMySPStatus: async (userId: string, dateFilter?: { year: number; month?: number }) => {
     const summary = await KPICountService.getMyKPISummary(userId, dateFilter);
-    const status = getSPStatus(summary.grand_total);
+    const status = await spSettingService.resolveStatus(summary.grand_total);
 
     return {
       userId: summary.userId,
@@ -546,14 +534,14 @@ const KPICountService = {
       ...status,
     };
   },
-  
-  getSPStatus,
-  
+
+  getSPStatus: spSettingService.resolveStatus,
+
   getAllSPStatus: async (dateFilter?: { year: number; month?: number }) => {
     const summaries = await KPICountService.getAllKPISummary(dateFilter);
 
-    return summaries.map((s) => {
-      const status = getSPStatus(s.grand_total);
+    return Promise.all(summaries.map(async (s) => {
+      const status = await spSettingService.resolveStatus(s.grand_total);
       return {
         userId: s.userId,
         name: s.name,
@@ -561,7 +549,7 @@ const KPICountService = {
         year: s.year,
         ...status,
       };
-    });
+    }));
   },
 };
 

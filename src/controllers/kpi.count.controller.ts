@@ -32,7 +32,7 @@ const KPICountController = {
       const rankIndex = allSummaries.findIndex((s) => s.userId.toString() === userId.toString());
       const summary = rankIndex >= 0 ? allSummaries[rankIndex] : await KPICountService.getMyKPISummary(userId, dateFilter);
       const rank = rankIndex >= 0 ? rankIndex + 1 : null;
-      const spStatus = KPICountService.getSPStatus(summary.grand_total);
+      const spStatus = await KPICountService.getSPStatus(summary.grand_total);
 
       return response({
         res,
@@ -57,8 +57,8 @@ const KPICountController = {
       const summaries = await KPICountService.getAllKPISummary(dateFilter);
       const currentUserRole = req.user?.role;
 
-      let data = summaries.map((s, index) => {
-        const spStatus = KPICountService.getSPStatus(s.grand_total);
+      let data = await Promise.all(summaries.map(async (s, index) => {
+        const spStatus = await KPICountService.getSPStatus(s.grand_total);
         return {
           rank: index + 1,
           userId: s.userId,
@@ -69,7 +69,7 @@ const KPICountController = {
           categories: s.categories,
           sp: spStatus.sp,
         };
-      });
+      }));
 
       if (currentUserRole !== "admin") {
         const allUsers = await userRepository.findAllUsers();
@@ -94,7 +94,7 @@ const KPICountController = {
       if (!userId) return response({ res, code: 400, message: "User ID is required" });
       const dateFilter = parseDateFilter(req.query);
       const summary = await KPICountService.getMyKPISummary(userId, dateFilter);
-      const spStatus = KPICountService.getSPStatus(summary.grand_total);
+      const spStatus = await KPICountService.getSPStatus(summary.grand_total);
       return response({
         res,
         code: 200,
