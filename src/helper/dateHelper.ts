@@ -33,6 +33,23 @@ const dateHelper = {
     return date.weekday === 7;
   },
 
+  // JS Date#getDay() semantics (0 = Sunday .. 6 = Saturday) but computed in
+  // the Asia/Jakarta zone instead of the server's local timezone.
+  getDayOfWeekWIB(date: Date): number {
+    const weekday = DateTime.fromJSDate(date).setZone(ZONE).weekday; // 1 (Mon) .. 7 (Sun)
+    return weekday % 7;
+  },
+
+  // Takes the WIB calendar day of `date` and sets the time-of-day to
+  // `HH:mm`, e.g. to build "this record's day at the checkout deadline".
+  combineDateAndTimeWIB(date: Date, hhmm: string): Date {
+    const [hour, minute] = hhmm.split(":").map(Number);
+    return DateTime.fromJSDate(date)
+      .setZone(ZONE)
+      .set({ hour, minute: minute || 0, second: 0, millisecond: 0 })
+      .toJSDate();
+  },
+
   getDate(date: Date): string {
     const isoDate = DateTime.fromJSDate(date).setZone(ZONE).toISODate();
     if (!isoDate) {

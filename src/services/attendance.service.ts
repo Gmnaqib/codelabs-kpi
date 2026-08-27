@@ -4,6 +4,7 @@ import userRepository from "../repository/user.repository";
 import leaveRequestValidate from "../validators/leaveRequest.validator";
 import operationalRecordService from "./operationalRecord.service";
 import KPICountService from "./kpi.count.services";
+import timeSettingService from "./timeSetting.service";
 import IAttendance, { attendanceStatus, approvalStatus } from "../models/attendance/attendance.Interface";
 import { Status } from "../models/user/user.interface";
 import { ScheduleType } from "../models/schedule/schedule.interface";
@@ -227,6 +228,22 @@ const attendanceService = {
       startOfPeriod = new Date(today.getFullYear(), today.getMonth(), 1, 0, 0, 0, 0);
     }
 
+    // A check-in without a check-out only turns into "absent" once that
+    // day's checkout deadline (checkoutlate) has passed — before that, the
+    // user may still check out later the same day.
+    const [weekdaySetting, weekendSetting] = await Promise.all([
+      timeSettingService.findByCode("WEEKDAY"),
+      timeSettingService.findByCode("WEEKEND"),
+    ]);
+    const hasCheckoutDeadlinePassed = (r: IAttendance): boolean => {
+      const refDate = r.checkIn ?? r.createdAt;
+      if (!refDate) return true;
+      const date = new Date(refDate);
+      const setting = dateHelper.getDayOfWeekWIB(date) === 6 ? weekendSetting : weekdaySetting;
+      const deadline = dateHelper.combineDateAndTimeWIB(date, setting.checkoutlate);
+      return new Date() > deadline;
+    };
+
     const userSummary = await Promise.all(allUsers.map(async (user) => {
       const userId = user._id?.toString() || "";
       const records = attendanceUserMap.get(userId) || [];
@@ -239,12 +256,14 @@ const attendanceService = {
         datesWithData.add(dateStr);
       });
 
-      const userLate = records.filter((r) => r.status === "present" && r.reason && r.checkOut).length;
-      const userPresent = records.filter((r) => r.status === "present" && !r.reason && r.checkOut).length;
+      // Present/late count as long as checkout is done, or the checkout
+      // deadline for that day hasn't passed yet.
+      const userLate = records.filter((r) => r.status === "present" && r.reason && (r.checkOut || !hasCheckoutDeadlinePassed(r))).length;
+      const userPresent = records.filter((r) => r.status === "present" && !r.reason && (r.checkOut || !hasCheckoutDeadlinePassed(r))).length;
       const userSick = records.filter((r) => r.status === "sick").length;
       const userPermit = records.filter((r) => r.status === "permit").length;
       const rejectedSickPermit = records.filter((r) => (r.status === "sick" || r.status === "permit") && r.approval_status === "rejected").length;
-      const incompleteCheckin = records.filter((r) => r.status === "present" && !r.checkOut).length;
+      const incompleteCheckin = records.filter((r) => r.status === "present" && !r.checkOut && hasCheckoutDeadlinePassed(r)).length;
 
       let missingDateCount = 0;
       const currentDate = new Date(startOfPeriod);
@@ -318,8 +337,24 @@ const attendanceService = {
 
   const statusSummary: any[] = [];
 
+  // A check-in without a check-out only turns into "absent" once that day's
+  // checkout deadline (checkoutlate) has passed — before that, the user may
+  // still check out later the same day.
+  const [weekdaySetting, weekendSetting] = await Promise.all([
+    timeSettingService.findByCode("WEEKDAY"),
+    timeSettingService.findByCode("WEEKEND"),
+  ]);
+  const hasCheckoutDeadlinePassed = (r: IAttendance): boolean => {
+    const refDate = r.checkIn ?? r.createdAt;
+    if (!refDate) return true;
+    const date = new Date(refDate);
+    const setting = dateHelper.getDayOfWeekWIB(date) === 6 ? weekendSetting : weekdaySetting;
+    const deadline = dateHelper.combineDateAndTimeWIB(date, setting.checkoutlate);
+    return new Date() > deadline;
+  };
+
   // --- Status Filtering ---
-  const lateRecords = attendanceRecords.filter((r) => r.status === "present" && r.reason && r.checkOut);
+  const lateRecords = attendanceRecords.filter((r) => r.status === "present" && r.reason && (r.checkOut || !hasCheckoutDeadlinePassed(r)));
   if (lateRecords.length > 0) {
     statusSummary.push({
       status: "late",
@@ -334,7 +369,7 @@ const attendanceService = {
     });
   }
 
-  const presentRecords = attendanceRecords.filter((r) => r.status === "present" && !r.reason && r.checkOut);
+  const presentRecords = attendanceRecords.filter((r) => r.status === "present" && !r.reason && (r.checkOut || !hasCheckoutDeadlinePassed(r)));
   if (presentRecords.length > 0) {
     statusSummary.push({
       status: "present",
@@ -384,7 +419,7 @@ const attendanceService = {
     (r) => (r.status === "sick" || r.status === "permit") && r.approval_status === "rejected"
   );
 
-  const incompleteCheckinRecords = attendanceRecords.filter((r) => r.status === "present" && !r.checkOut);
+  const incompleteCheckinRecords = attendanceRecords.filter((r) => r.status === "present" && !r.checkOut && hasCheckoutDeadlinePassed(r));
 
   // --- FIXED: PERHITUNGAN RANGE HARI KERJA BERDASARKAN BULAN YANG DIPILIH ---
   const startOfSelectedMonth = DateTime.local(effectiveYear, effectiveMonth, 1).setZone("Asia/Jakarta").startOf("day");
