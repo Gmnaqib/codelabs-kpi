@@ -20,6 +20,8 @@ const capToActivePicketUsers = (schedule: ISchedule & { toObject: () => any }) =
   };
 };
 
+const toPlainSchedule = (schedule: ISchedule & { toObject: () => any }) => schedule.toObject();
+
 const scheduleService = {
   createSchedule: async (type: ScheduleType, date: Date, assignedUsers?: Types.ObjectId[], description?: string): Promise<ISchedule> => {
     if (!type || !date) {
@@ -27,8 +29,11 @@ const scheduleService = {
     }
 
     const dayOfWeek = date.getDay();
-    if (dayOfWeek === 0 || dayOfWeek === 6) {
-      throw new Error("Schedule date must be Monday to Friday only");
+    if (dayOfWeek === 0) {
+      throw new Error("Schedule date must be Monday to Saturday only");
+    }
+    if (type === ScheduleType.picket && dayOfWeek === 6) {
+      throw new Error("Picket schedule date must be Monday to Friday only");
     }
 
     const scheduleData: Partial<ISchedule> = { type, date };
@@ -115,12 +120,57 @@ const scheduleService = {
     return createdSchedules;
   },
 
+  // Thematic doesn't repeat weekly like picket — each entry is a specific,
+  // one-off date with its own team, no day-of-week expansion/rotation at all.
+  createThematicScheduleBatch: async (
+    entries: Array<{ date: Date; assignedUsers: Types.ObjectId[]; description?: string }>
+  ): Promise<ISchedule[]> => {
+    if (!entries || entries.length === 0) {
+      throw new Error("At least one schedule entry is required");
+    }
+
+    const createdSchedules: ISchedule[] = [];
+
+    for (const entry of entries) {
+      if (!entry.date || isNaN(entry.date.getTime())) {
+        throw new Error("Each entry must have a valid date");
+      }
+      if (!entry.assignedUsers || entry.assignedUsers.length === 0) {
+        throw new Error("Each entry must have at least one assignedUser");
+      }
+
+      // Monday-Saturday only; Sunday is never a valid schedule day.
+      const dayOfWeek = entry.date.getDay();
+      if (dayOfWeek === 0) {
+        throw new Error("Thematic schedule date must be Monday to Saturday only");
+      }
+
+      // Hapus jadwal tematik lama di tanggal yang sama supaya tidak dobel saat resubmit
+      await scheduleRepository.deleteSchedulesByTypeAndDate(ScheduleType.thematic, entry.date);
+
+      const created = await scheduleRepository.createSchedule({
+        type: ScheduleType.thematic,
+        date: entry.date,
+        assignedUsers: entry.assignedUsers,
+        description: entry.description,
+      });
+      createdSchedules.push(created);
+    }
+
+    return createdSchedules;
+  },
+
   getAllSchedules: async (): Promise<ISchedule[]> => {
     return await scheduleRepository.findAllSchedules();
   },
 
-  getTodayPicketSchedule: async (): Promise<any[]> => {
-    const schedules = await scheduleRepository.findSchedulesByTypeAndDate(ScheduleType.picket, new Date());
+  // `date` defaults to today, but the caller (e.g. the Schedule page's date
+  // filter) can pass any day to look up that day's picket team instead.
+  getTodayPicketSchedule: async (date: Date = new Date()): Promise<any[]> => {
+    if (isNaN(date.getTime())) {
+      throw new Error("Invalid date format");
+    }
+    const schedules = await scheduleRepository.findSchedulesByTypeAndDate(ScheduleType.picket, date);
 
     // assignedUsers sudah dirotasi saat dibuat (createBatchSchedule), di sini tinggal dipotong maksimal 6 orang
     return schedules.map(capToActivePicketUsers);
@@ -138,6 +188,27 @@ const scheduleService = {
 
     // hanya posisi 1-6 yang ditampilkan sebagai kandidat tukar, karena kapasitas piket per hari cuma 6 orang
     return schedules.map(capToActivePicketUsers);
+  },
+
+  // `date` defaults to today, same as getTodayPicketSchedule above.
+  getTodayThematicSchedule: async (date: Date = new Date()): Promise<any[]> => {
+    if (isNaN(date.getTime())) {
+      throw new Error("Invalid date format");
+    }
+    const schedules = await scheduleRepository.findSchedulesByTypeAndDate(ScheduleType.thematic, date);
+    return schedules.map(toPlainSchedule);
+  },
+
+  getUpcomingThematicScheduleForSwap: async (): Promise<any[]> => {
+    const startDate = new Date();
+    startDate.setHours(0, 0, 0, 0);
+
+    const endDate = new Date();
+    endDate.setDate(endDate.getDate() + 13); // 2 minggu kedepan (hari ini + 13 hari)
+    endDate.setHours(23, 59, 59, 999);
+
+    const schedules = await scheduleRepository.findSchedulesByTypeAndDateRange(ScheduleType.thematic, startDate, endDate);
+    return schedules.map(toPlainSchedule);
   },
 
   getScheduleById: async (id: Types.ObjectId): Promise<ISchedule | null> => {
@@ -320,6 +391,45 @@ const scheduleService = {
 
     const updatedSchedule2 = await scheduleRepository.updateScheduleById(schedule2Id, {
       assignedUsers: updatedAssignedUsers2,
+    });
+
+    return {
+      schedule1: updatedSchedule1,
+      schedule2: updatedSchedule2,
+    };
+  },
+
+  // Swaps the ENTIRE assignedUsers list between two schedules (e.g. swapping
+  // the whole Monday thematic team with the whole Wednesday team), as
+  // opposed to swapUsers above which only swaps one specific person each.
+  swapGroups: async (
+    schedule1Id: Types.ObjectId,
+    schedule2Id: Types.ObjectId,
+  ): Promise<{ schedule1: ISchedule | null; schedule2: ISchedule | null }> => {
+    if (!Types.ObjectId.isValid(schedule1Id) || !Types.ObjectId.isValid(schedule2Id)) {
+      throw new Error("Invalid ObjectId format");
+    }
+
+    const schedule1 = await scheduleRepository.findScheduleById(schedule1Id);
+    const schedule2 = await scheduleRepository.findScheduleById(schedule2Id);
+
+    if (!schedule1) {
+      throw new Error(`Schedule 1 with ID ${schedule1Id} not found`);
+    }
+
+    if (!schedule2) {
+      throw new Error(`Schedule 2 with ID ${schedule2Id} not found`);
+    }
+
+    const assignedUsers1 = schedule1.assignedUsers ?? [];
+    const assignedUsers2 = schedule2.assignedUsers ?? [];
+
+    const updatedSchedule1 = await scheduleRepository.updateScheduleById(schedule1Id, {
+      assignedUsers: assignedUsers2,
+    });
+
+    const updatedSchedule2 = await scheduleRepository.updateScheduleById(schedule2Id, {
+      assignedUsers: assignedUsers1,
     });
 
     return {

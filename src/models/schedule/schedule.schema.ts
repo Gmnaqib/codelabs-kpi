@@ -16,12 +16,17 @@ const ScheduleSchema = new Schema<ISchedule>(
   { timestamps: true },
 );
 
-// Validasi tanggal harus Senin-Jumat
+// Minggu tidak pernah valid untuk jadwal apa pun. Picket masih dibatasi
+// Senin-Jumat; Thematic (tidak berulang mingguan seperti picket) boleh
+// sampai Sabtu.
 ScheduleSchema.pre("save", function (next) {
   const dayOfWeek = this.date.getDay();
   // 0 = Minggu, 1 = Senin, ..., 5 = Jumat, 6 = Sabtu
-  if (dayOfWeek === 0 || dayOfWeek === 6) {
-    throw new Error("Schedule date must be Monday to Friday only");
+  if (dayOfWeek === 0) {
+    throw new Error("Schedule date must be Monday to Saturday only");
+  }
+  if (this.type === "picket" && dayOfWeek === 6) {
+    throw new Error("Picket schedule date must be Monday to Friday only");
   }
   next();
 });

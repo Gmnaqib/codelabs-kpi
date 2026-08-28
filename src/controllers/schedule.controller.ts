@@ -61,10 +61,55 @@ const scheduleController = {
     }
   },
 
+  createThematicScheduleBatch: async (req: AuthRequest, res: Response): Promise<any> => {
+    try {
+      const { entries } = req.body;
+
+      if (!Array.isArray(entries) || entries.length === 0) {
+        return response({ res, code: 400, message: "entries must be a non-empty array" });
+      }
+
+      for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
+        if (!entry.date) {
+          return response({ res, code: 400, message: `Entry ${i} must have a date` });
+        }
+        if (isNaN(new Date(entry.date).getTime())) {
+          return response({ res, code: 400, message: `Entry ${i} has an invalid date format` });
+        }
+        if (!entry.assignedUsers || !Array.isArray(entry.assignedUsers) || entry.assignedUsers.length === 0) {
+          return response({ res, code: 400, message: `Entry ${i} must have at least one assignedUser` });
+        }
+        for (const userId of entry.assignedUsers) {
+          if (!Types.ObjectId.isValid(userId)) {
+            return response({ res, code: 400, message: `Invalid userId format in entry ${i}` });
+          }
+        }
+      }
+
+      const schedules = await scheduleService.createThematicScheduleBatch(
+        entries.map((entry: any) => ({
+          date: new Date(entry.date),
+          assignedUsers: entry.assignedUsers.map((id: string) => new Types.ObjectId(id)),
+          description: entry.description,
+        }))
+      );
+
+      return response({ res, code: 201, message: `${schedules.length} thematic schedules created successfully`, data: schedules });
+    } catch (error: any) {
+      return response({ res, code: 400, message: error.message });
+    }
+  },
+
   getTodayPicketSchedule: async (req: Request, res: Response): Promise<any> => {
     try {
-      const schedules = await scheduleService.getTodayPicketSchedule();
-      return response({ res, code: 200, message: "Today's picket schedule retrieved successfully", data: schedules });
+      const { date } = req.query;
+      const targetDate = date ? new Date(date as string) : undefined;
+      if (targetDate && isNaN(targetDate.getTime())) {
+        return response({ res, code: 400, message: "Invalid date format" });
+      }
+      const schedules = await scheduleService.getTodayPicketSchedule(targetDate);
+      return response({ res, code: 200, message: "Picket schedule retrieved successfully", data: schedules });
     } catch (error: any) {
       return response({ res, code: 500, message: error.message });
     }
@@ -74,6 +119,29 @@ const scheduleController = {
     try {
       const schedules = await scheduleService.getUpcomingPicketScheduleForSwap();
       return response({ res, code: 200, message: "Upcoming picket schedules for swap retrieved successfully", data: schedules });
+    } catch (error: any) {
+      return response({ res, code: 500, message: error.message });
+    }
+  },
+
+  getTodayThematicSchedule: async (req: Request, res: Response): Promise<any> => {
+    try {
+      const { date } = req.query;
+      const targetDate = date ? new Date(date as string) : undefined;
+      if (targetDate && isNaN(targetDate.getTime())) {
+        return response({ res, code: 400, message: "Invalid date format" });
+      }
+      const schedules = await scheduleService.getTodayThematicSchedule(targetDate);
+      return response({ res, code: 200, message: "Thematic schedule retrieved successfully", data: schedules });
+    } catch (error: any) {
+      return response({ res, code: 500, message: error.message });
+    }
+  },
+
+  getUpcomingThematicScheduleForSwap: async (req: Request, res: Response): Promise<any> => {
+    try {
+      const schedules = await scheduleService.getUpcomingThematicScheduleForSwap();
+      return response({ res, code: 200, message: "Upcoming thematic schedules for swap retrieved successfully", data: schedules });
     } catch (error: any) {
       return response({ res, code: 500, message: error.message });
     }
@@ -263,6 +331,26 @@ const scheduleController = {
       const result = await scheduleService.swapUsers(schedule1Id, schedule1UserId, schedule2Id, schedule2UserId);
 
       return response({ res, code: 200, message: "Users swapped successfully", data: result });
+    } catch (error: any) {
+      return response({ res, code: 400, message: error.message });
+    }
+  },
+
+  swapGroups: async (req: AuthRequest, res: Response): Promise<any> => {
+    try {
+      const { schedule1Id, schedule2Id } = req.body;
+
+      if (!schedule1Id || !schedule2Id) {
+        return response({ res, code: 400, message: "schedule1Id and schedule2Id are required" });
+      }
+
+      if (!Types.ObjectId.isValid(schedule1Id) || !Types.ObjectId.isValid(schedule2Id)) {
+        return response({ res, code: 400, message: "Invalid ObjectId format" });
+      }
+
+      const result = await scheduleService.swapGroups(schedule1Id, schedule2Id);
+
+      return response({ res, code: 200, message: "Groups swapped successfully", data: result });
     } catch (error: any) {
       return response({ res, code: 400, message: error.message });
     }
