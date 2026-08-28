@@ -7,8 +7,15 @@ import fs from "fs";
 import path from "path";
 
 const userService = {
-  getAllUsers: async (currentUserRole?: Role): Promise<IUser[]> => {
-    const users = await userRepository.findAllUsers();
+  // `activeOnly` is for operational/reporting consumers (attendance, schedule,
+  // check-in, dashboards, KPI lists, etc.) that should only ever see active,
+  // non-lecturer members. It defaults to off so the Members admin page (which
+  // needs to see and manage inactive/graduated/lecturer accounts too) keeps
+  // its existing unfiltered behavior.
+  getAllUsers: async (currentUserRole?: Role, activeOnly?: boolean): Promise<IUser[]> => {
+    const users = activeOnly
+      ? await userRepository.findUsersByFilter({ status: Status.active, role: { $ne: Role.Lecturer } } as any)
+      : await userRepository.findAllUsers();
 
     if (currentUserRole === Role.Admin) {
       return users;

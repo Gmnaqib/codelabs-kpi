@@ -6,7 +6,7 @@ import operationalRecordService from "./operationalRecord.service";
 import KPICountService from "./kpi.count.services";
 import timeSettingService from "./timeSetting.service";
 import IAttendance, { attendanceStatus, approvalStatus } from "../models/attendance/attendance.Interface";
-import { Status } from "../models/user/user.interface";
+import { Status, Role } from "../models/user/user.interface";
 import { ScheduleType } from "../models/schedule/schedule.interface";
 import { resolveKpiDetailId } from "../helper/kpi.detail.validator";
 import { Types } from "mongoose";
@@ -259,7 +259,7 @@ const attendanceService = {
     });
 
     // Get all active users
-    const allUsers = await userRepository.findUsersByFilter({ status: Status.active });
+    const allUsers = await userRepository.findUsersByFilter({ status: Status.active, role: { $ne: Role.Lecturer } } as any);
 
     // Create a map of users who have attendance data
     const attendanceUserMap = new Map<string, IAttendance[]>();

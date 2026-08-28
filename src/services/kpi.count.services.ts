@@ -5,6 +5,7 @@ import operationalRecordRepository from "../repository/operationalRecord.reposit
 import brandingRepository from "../repository/branding.respository";
 import competitionRepository from "../repository/competition.respository";
 import userRepository from "../repository/user.repository";
+import { Status, Role } from "../models/user/user.interface";
 import KPIBaselineRepository from "../repository/kpi.baseline.repository";
 import spSettingService from "./spSetting.service";
 import dateHelper from "../helper/dateHelper";
@@ -293,7 +294,7 @@ const KPICountService = {
   },
 
   getAllKPISummary: async (dateFilter?: { year: number; month?: number }) => {
-    const allUsers = await userRepository.findAllUsers();
+    const allUsers = await userRepository.findUsersByFilter({ status: Status.active, role: { $ne: Role.Lecturer } } as any);
     const { masters, detailsByMaster } = await loadKpiConfig();
 
     const summaries = await Promise.all(
@@ -445,7 +446,7 @@ const KPICountService = {
   },
 
   getAllResearchSummary: async (dateFilter?: { year: number; month?: number }) => {
-    const allUsers = await userRepository.findAllUsers();
+    const allUsers = await userRepository.findUsersByFilter({ status: Status.active, role: { $ne: Role.Lecturer } } as any);
     const masters: any[] = await KPIRepository.findAllMasters();
     const researchMaster = masters.find((m) => m.kementerian.toLowerCase() === "research");
     const details: any[] = researchMaster ? await KPIRepository.findDetailsByMasterId(researchMaster._id.toString()) : [];
@@ -491,7 +492,7 @@ const KPICountService = {
   },
 
   getAllOperationalBreakdown: async (dateFilter?: { year: number; month?: number }) => {
-    const allUsers = await userRepository.findAllUsers();
+    const allUsers = await userRepository.findUsersByFilter({ status: Status.active, role: { $ne: Role.Lecturer } } as any);
     const masters: any[] = await KPIRepository.findAllMasters();
     const operationalMaster = masters.find((m) => m.kementerian.toLowerCase() === "operational");
     const details: any[] = operationalMaster ? await KPIRepository.findDetailsByMasterId(operationalMaster._id.toString()) : [];

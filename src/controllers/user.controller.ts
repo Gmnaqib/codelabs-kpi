@@ -8,7 +8,8 @@ const userController = {
   getAllUsers: async (req: AuthRequest, res: Response): Promise<any> => {
     try {
       const currentUserRole = req.user?.role;
-      const users = await userService.getAllUsers(currentUserRole);
+      const activeOnly = req.query.activeOnly === "true";
+      const users = await userService.getAllUsers(currentUserRole, activeOnly);
       return response({ res, code: 200, message: "Get all user success", data: users });
     } catch (error) {
       return response({ res, code: 500, message: "Error fetching users" });
