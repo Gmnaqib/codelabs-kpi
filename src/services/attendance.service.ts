@@ -12,6 +12,7 @@ import { resolveKpiDetailId } from "../helper/kpi.detail.validator";
 import { Types } from "mongoose";
 import dateHelper from "../helper/dateHelper";
 import operationalRecordRepository from "../repository/operationalRecord.repository";
+import scheduleRepository from "../repository/schedule.repository";
 import KPISnapshotHelper from "../helper/kpiSnapshotHelper";
 import { KPIDetail } from "../models/kpi/kpi_item/kpi.item.schema";
 import { DateTime } from "luxon";
@@ -55,6 +56,15 @@ const resolveAttendanceSnapshot = async (
     kpi_snapshot: snapshot,
     earned_point: KPISnapshotHelper.calculateNormalPoint(snapshot),
   };
+};
+
+// The "auto-create a thematic operational record on checkout" step below
+// should only fire on days that actually have a thematic schedule — it's
+// not limited to the specific users listed on that schedule; everyone who
+// checks out that day gets the thematic point.
+const isThematicScheduledToday = async (date: Date): Promise<boolean> => {
+  const schedules = await scheduleRepository.findSchedulesByTypeAndDate(ScheduleType.thematic, date);
+  return schedules.length > 0;
 };
 
 const attendanceService = {
@@ -114,14 +124,16 @@ const attendanceService = {
     userAttendance.checkOut = checkOutTime;
     const result = await userAttendance.save();
 
-    try {
-      await operationalRecordService.createOperationalRecord({
-        userId: userObjectId,
-        type: ScheduleType.thematic,
-        date: new Date(),
-      } as any);
-    } catch (error) {
-      console.log("Operational record creation skipped:", (error as any).message);
+    if (await isThematicScheduledToday(checkOutTime)) {
+      try {
+        await operationalRecordService.createOperationalRecord({
+          userId: userObjectId,
+          type: ScheduleType.thematic,
+          date: checkOutTime,
+        } as any);
+      } catch (error) {
+        console.log("Operational record creation skipped:", (error as any).message);
+      }
     }
 
     return convertAttendanceToIndonesiaTime(result);
@@ -623,20 +635,23 @@ const attendanceService = {
       throw new Error("User has already checked out");
     }
 
-    userAttendance.checkOut = new Date();
+    const checkOutTime = new Date();
+    userAttendance.checkOut = checkOutTime;
     userAttendance.reasonCheckOut = reasonCheckOut;
     const result = await userAttendance.save();
 
-    // Create operational record
-    try {
-      await operationalRecordService.createOperationalRecord({
-        userId: targetUserId,
-        type: ScheduleType.thematic,
-        date: new Date(),
-      } as any);
-    } catch (error) {
-      console.log("Operational record creation skipped:", (error as any).message);
-      // Jangan throw error jika operational record gagal, tetap return attendance result
+    // Create operational record — only if the user is actually on a thematic schedule today
+    if (await isThematicScheduledToday(checkOutTime)) {
+      try {
+        await operationalRecordService.createOperationalRecord({
+          userId: targetUserId,
+          type: ScheduleType.thematic,
+          date: checkOutTime,
+        } as any);
+      } catch (error) {
+        console.log("Operational record creation skipped:", (error as any).message);
+        // Jangan throw error jika operational record gagal, tetap return attendance result
+      }
     }
 
     return convertAttendanceToIndonesiaTime(result);
