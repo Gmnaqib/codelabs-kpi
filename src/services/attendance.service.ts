@@ -296,6 +296,11 @@ const attendanceService = {
       return new Date() > deadline;
     };
 
+    // KPI masters/details are the same for every user — fetch them ONCE
+    // here instead of letting each getMyKPISummary call below re-query
+    // identical config data per user.
+    const { masters: kpiMasters, detailsByMaster: kpiDetailsByMaster } = await KPICountService.loadKpiConfig();
+
     const userSummary = await Promise.all(allUsers.map(async (user) => {
       const userId = user._id?.toString() || "";
       const records = attendanceUserMap.get(userId) || [];
@@ -340,19 +345,26 @@ const attendanceService = {
         absent: userAbsent,
       };
 
-      // sp dihitung dari grand_total KPI bulan yang sama, hanya disisipkan
-      // (ke dalam counts) saat absent > 4.
-      if (userAbsent > 4) {
-        try {
-          const kpiSummary = await KPICountService.getMyKPISummary(userId, {
+      // sp dihitung dari grand_total KPI bulan yang sama, dan dicek untuk
+      // SEMUA user (bukan cuma yang absent > 4) — soalnya tier SP itu murni
+      // ditentukan oleh grand_total lewat SP Setting yang dinamis, tidak ada
+      // hubungannya langsung dengan absent. User dengan absent rendah tapi
+      // grand_total jelek (mis. karena riset/kompetisi/branding) tetap harus
+      // kena SP kalau memang sesuai aturan SP Setting.
+      try {
+        const kpiSummary = await KPICountService.getMyKPISummary(
+          userId,
+          {
             year: year ?? today.getFullYear(),
             month: month ?? today.getMonth() + 1,
-          });
-          const spStatus = await KPICountService.getSPStatus(kpiSummary.grand_total);
-          counts.sp = spStatus.sp;
-        } catch (error) {
-          // Jika gagal ambil KPI, biarkan counts tanpa sp daripada menggagalkan summary attendance.
-        }
+          },
+          { masters: kpiMasters, detailsByMaster: kpiDetailsByMaster, user }
+        );
+        const spStatus = await KPICountService.getSPStatus(kpiSummary.grand_total);
+        counts.point = kpiSummary.grand_total;
+        counts.sp = spStatus.sp;
+      } catch (error) {
+        // Jika gagal ambil KPI, biarkan counts tanpa point/sp daripada menggagalkan summary attendance.
       }
 
       return { userId, userName: user.name, counts };

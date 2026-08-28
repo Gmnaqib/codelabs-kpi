@@ -56,20 +56,56 @@ const hitungPointRange = (point: number, maxActivity: number, nilaiStatus: numbe
 // managed dynamically via the SPSetting collection (see spSetting.service.ts
 // and the /sp-setting CRUD routes). getSPStatus below just delegates to it.
 
+// KPI masters/details are the SAME config data for every user (not
+// user-specific), so a caller looping over many users (e.g.
+// attendance.service.ts's getAttendanceSummary) can fetch them ONCE and pass
+// them in here via `preloaded`, instead of every getMyKPISummary call
+// re-querying identical data. Falls back to fetching internally when not
+// provided, so every existing caller keeps working unchanged.
+interface PreloadedKpiData {
+  masters?: any[];
+  detailsByMaster?: Map<string, any[]>;
+  user?: any;
+}
+
+// Fetches KPI masters + details ONCE (2 queries total, regardless of user
+// count) and groups details by master, for reuse across many
+// getMyKPISummary calls via `preloaded` — e.g. attendance.service.ts's
+// getAttendanceSummary and getAllKPISummary below, both of which loop over
+// every user.
+const loadKpiConfig = async (): Promise<{ masters: any[]; detailsByMaster: Map<string, any[]> }> => {
+  const [masters, details] = await Promise.all([
+    KPIRepository.findAllMasters(),
+    KPIRepository.findAllDetails(),
+  ]);
+  const detailsByMaster = new Map<string, any[]>();
+  (details as any[]).forEach((detail) => {
+    const masterId = (detail.id_kpi_master as any)?._id?.toString() ?? detail.id_kpi_master?.toString();
+    if (!masterId) return;
+    if (!detailsByMaster.has(masterId)) detailsByMaster.set(masterId, []);
+    detailsByMaster.get(masterId)!.push(detail);
+  });
+  return { masters, detailsByMaster };
+};
+
 const KPICountService = {
-  getMyKPISummary: async (userId: string, dateFilter?: { year: number; month?: number }) => {
+  loadKpiConfig,
+
+  getMyKPISummary: async (userId: string, dateFilter?: { year: number; month?: number }, preloaded?: PreloadedKpiData) => {
     const userObjectId = new Types.ObjectId(userId);
-    const user = await userRepository.findUserById(userId);
+    const user = preloaded?.user ?? await userRepository.findUserById(userId);
     if (!user) throw new Error("User not found");
 
     const dateRange = buildDateFilter(dateFilter);
-    const masters: any[] = await KPIRepository.findAllMasters();
+    const masters: any[] = preloaded?.masters ?? await KPIRepository.findAllMasters();
     const categories: any[] = [];
     const baselines: any[] = dateFilter ? [] : await KPIBaselineRepository.findBaselinesByUserId(userId);
     const baselineByMasterId = new Map(baselines.map((b: any) => [b.id_kpi_master.toString(), b]));
 
     for (const master of masters) {
-      const details: any[] = await KPIRepository.findDetailsByMasterId(master._id.toString());
+      const details: any[] = preloaded?.detailsByMaster
+        ? preloaded.detailsByMaster.get(master._id.toString()) ?? []
+        : await KPIRepository.findDetailsByMasterId(master._id.toString());
       const detailResults: any[] = [];
       const baseline = baselineByMasterId.get(master._id.toString());
       const cutoffDate: Date | undefined = baseline?.cutoffDate;
@@ -258,12 +294,13 @@ const KPICountService = {
 
   getAllKPISummary: async (dateFilter?: { year: number; month?: number }) => {
     const allUsers = await userRepository.findAllUsers();
-    const summaries: any[] = [];
+    const { masters, detailsByMaster } = await loadKpiConfig();
 
-    for (const user of allUsers) {
-      const summary = await KPICountService.getMyKPISummary(user._id.toString(), dateFilter);
-      summaries.push(summary);
-    }
+    const summaries = await Promise.all(
+      allUsers.map((user) =>
+        KPICountService.getMyKPISummary(user._id.toString(), dateFilter, { masters, detailsByMaster, user })
+      )
+    );
 
     return summaries.sort((a, b) => b.grand_total - a.grand_total);
   },
