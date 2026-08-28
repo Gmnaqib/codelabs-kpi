@@ -7,7 +7,8 @@
     "dev": "nodemon --exec ts-node src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "seed": "ts-node src/seed.ts"
+    "seed": "ts-node src/seed.ts",
+    "backfill:attendance-snapshot": "ts-node src/backfillAttendanceSnapshot.ts"
   },
   "author": "Gumilar Muhammad Naqib",
   "license": "ISC",
