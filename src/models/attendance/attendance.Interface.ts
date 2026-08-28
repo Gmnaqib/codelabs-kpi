@@ -1,4 +1,5 @@
 import { Types } from "mongoose";
+import { IKPISnapshot } from "../kpi/kpi_snapshot.interface";
 
 interface IAttendance {
   userId: Types.ObjectId;
@@ -14,6 +15,8 @@ interface IAttendance {
   approval_status?: approvalStatus;
   approved_by?: Types.ObjectId;
   submitted_by?: Types.ObjectId;
+  earned_point?: number;
+  kpi_snapshot?: IKPISnapshot;
   createdAt?: Date;
   updatedAt?: Date;
 }

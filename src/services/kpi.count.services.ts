@@ -107,7 +107,13 @@ const KPICountService = {
             return sum + (typeof r.earned_point === "number" ? r.earned_point : (detail.point / (detail.max_activity || 1)));
           }, 0);
 
-          const attendancePoints = attendanceRecords.length * (detail.point / (detail.max_activity || 1));
+          // Sama seperti operationalRecords: pakai earned_point yang sudah terkunci
+          // di saat check-in kalau ada, supaya perubahan point KPI sekarang tidak
+          // mengubah nilai check-in yang sudah lewat. Record lama tanpa snapshot
+          // (dibuat sebelum fitur ini ada) fallback ke perhitungan live.
+          const attendancePoints = attendanceRecords.reduce((sum: number, r: any) => {
+            return sum + (typeof r.earned_point === "number" ? r.earned_point : (detail.point / (detail.max_activity || 1)));
+          }, 0);
           const totalRaw = operationalPoints + attendancePoints;
 
           point_akhir = detail.label === "REQUIRED" ? Math.min(totalRaw, detail.point) : totalRaw;

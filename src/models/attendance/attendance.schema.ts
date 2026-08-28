@@ -1,6 +1,7 @@
 import { Schema, model } from "mongoose";
 import mongoose from "mongoose";
 import IAttendance, { approvalStatus, attendanceStatus } from "./attendance.Interface";
+import { kpiSnapshotSchema } from "../kpi/kpi_snapshot.interface";
 
 const attendanceSchema = new Schema<IAttendance>(
   {
@@ -22,6 +23,8 @@ const attendanceSchema = new Schema<IAttendance>(
     approval_status: { type: String, enum: Object.values(approvalStatus) },
     approved_by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     submitted_by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    earned_point: { type: Number, default: 0 },
+    kpi_snapshot: { type: kpiSnapshotSchema, default: null },
   },
   { timestamps: true },
 );

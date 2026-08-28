@@ -12,6 +12,8 @@ import { resolveKpiDetailId } from "../helper/kpi.detail.validator";
 import { Types } from "mongoose";
 import dateHelper from "../helper/dateHelper";
 import operationalRecordRepository from "../repository/operationalRecord.repository";
+import KPISnapshotHelper from "../helper/kpiSnapshotHelper";
+import { KPIDetail } from "../models/kpi/kpi_item/kpi.item.schema";
 import { DateTime } from "luxon";
 
 const convertRecordsToIndonesiaTime = (records: any[]): any[] => {
@@ -38,12 +40,30 @@ const convertAttendanceToIndonesiaTime = (record: any) => {
   };
 };
 
+// Locks in the KPI detail's point value at the moment of check-in, so a
+// later change to that item's point (or max_activity) doesn't retroactively
+// change what past check-ins are worth. Check-out reuses the same record, so
+// it's covered by this same snapshot — no separate snapshot needed there.
+const resolveAttendanceSnapshot = async (
+  id_kpi_detail: Types.ObjectId | null | undefined
+): Promise<{ kpi_snapshot?: ReturnType<typeof KPISnapshotHelper.createSnapshot>; earned_point?: number }> => {
+  if (!id_kpi_detail) return {};
+  const kpiDetail = await KPIDetail.findById(id_kpi_detail);
+  if (!kpiDetail) return {};
+  const snapshot = KPISnapshotHelper.createSnapshot(kpiDetail as any);
+  return {
+    kpi_snapshot: snapshot,
+    earned_point: KPISnapshotHelper.calculateNormalPoint(snapshot),
+  };
+};
+
 const attendanceService = {
   checkIn: async (userId: Types.ObjectId, clientIp: string, reason?: string): Promise<IAttendance> => {
     const validationResult = await attendanceValidate.checkIn(userId, clientIp, reason);
     const userObjectId = new Types.ObjectId(userId);
     // FE tidak mengirim id_kpi_detail saat checkin, jadi dicocokkan otomatis dari kpi_item "attendance" di kementerian operational
     const id_kpi_detail = await resolveKpiDetailId("operational", "attendance");
+    const snapshotFields = await resolveAttendanceSnapshot(id_kpi_detail);
 
     if (validationResult.isLateCheckIn) {
       const record = await attendanceRepository.create({
@@ -53,6 +73,7 @@ const attendanceService = {
         checkIn: new Date(),
         checkOut: null,
         reason: reason,
+        ...snapshotFields,
       });
       return convertAttendanceToIndonesiaTime(record);
     }
@@ -63,6 +84,7 @@ const attendanceService = {
       status: attendanceStatus.PRESENT,
       checkIn: new Date(),
       checkOut: null,
+      ...snapshotFields,
     });
     return convertAttendanceToIndonesiaTime(record);
   },
@@ -167,6 +189,7 @@ const attendanceService = {
     }
 
     const id_kpi_detail = await resolveKpiDetailId("operational", "attendance");
+    const snapshotFields = await resolveAttendanceSnapshot(id_kpi_detail);
 
     const record = await attendanceRepository.create({
       userId: userObjectId,
@@ -174,6 +197,7 @@ const attendanceService = {
       status: attendanceStatus.PRESENT,
       checkIn: new Date(),
       checkOut: null,
+      ...snapshotFields,
     });
 
     return convertAttendanceToIndonesiaTime(record);
