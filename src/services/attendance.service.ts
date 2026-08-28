@@ -58,13 +58,26 @@ const resolveAttendanceSnapshot = async (
   };
 };
 
-// The "auto-create a thematic operational record on checkout" step below
-// should only fire on days that actually have a thematic schedule — it's
-// not limited to the specific users listed on that schedule; everyone who
-// checks out that day gets the thematic point.
-const isThematicScheduledToday = async (date: Date): Promise<boolean> => {
+// Two KPI items in the Points page drive the two thematic tiers below — the
+// admin manages their actual point values there, this is just the lookup
+// key. If a name is renamed later, update these constants to match, same
+// caveat as resolveKpiDetailId in general.
+const THEMATIC_PRESENTER_KPI_ITEM = "Thematic Presenter";
+const THEMATIC_PARTICIPANT_KPI_ITEM = "Thematic Participant";
+
+// On checkout: users actually assigned to today's thematic schedule earn the
+// "Presenter" tier; everyone else still earns the "Participant" tier as
+// long as a thematic schedule exists that day at all. No thematic schedule
+// today -> null, no thematic point for anyone.
+const resolveThematicTierForCheckout = async (userId: Types.ObjectId, date: Date): Promise<string | null> => {
   const schedules = await scheduleRepository.findSchedulesByTypeAndDate(ScheduleType.thematic, date);
-  return schedules.length > 0;
+  if (schedules.length === 0) return null;
+
+  const isPresenter = schedules.some((schedule: any) =>
+    (schedule.assignedUsers ?? []).some((assigned: any) => assigned._id?.toString() === userId.toString())
+  );
+
+  return isPresenter ? THEMATIC_PRESENTER_KPI_ITEM : THEMATIC_PARTICIPANT_KPI_ITEM;
 };
 
 const attendanceService = {
@@ -124,12 +137,15 @@ const attendanceService = {
     userAttendance.checkOut = checkOutTime;
     const result = await userAttendance.save();
 
-    if (await isThematicScheduledToday(checkOutTime)) {
+    const thematicKpiItem = await resolveThematicTierForCheckout(userObjectId, checkOutTime);
+    if (thematicKpiItem) {
       try {
+        const id_kpi_detail = await resolveKpiDetailId("operational", thematicKpiItem);
         await operationalRecordService.createOperationalRecord({
           userId: userObjectId,
           type: ScheduleType.thematic,
           date: checkOutTime,
+          ...(id_kpi_detail && { id_kpi_detail }),
         } as any);
       } catch (error) {
         console.log("Operational record creation skipped:", (error as any).message);
@@ -640,13 +656,16 @@ const attendanceService = {
     userAttendance.reasonCheckOut = reasonCheckOut;
     const result = await userAttendance.save();
 
-    // Create operational record — only if the user is actually on a thematic schedule today
-    if (await isThematicScheduledToday(checkOutTime)) {
+    // Create operational record — tier (Presenter/Participant) depends on whether the user is on today's thematic schedule
+    const thematicKpiItem = await resolveThematicTierForCheckout(targetUserId, checkOutTime);
+    if (thematicKpiItem) {
       try {
+        const id_kpi_detail = await resolveKpiDetailId("operational", thematicKpiItem);
         await operationalRecordService.createOperationalRecord({
           userId: targetUserId,
           type: ScheduleType.thematic,
           date: checkOutTime,
+          ...(id_kpi_detail && { id_kpi_detail }),
         } as any);
       } catch (error) {
         console.log("Operational record creation skipped:", (error as any).message);

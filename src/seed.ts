@@ -15,7 +15,13 @@ const MINISTRIES = ["operational", "research", "branding", "competition"];
 // look up KPI details under "operational" by these exact lowercase names.
 // Without them, the operational breakdown always reports zero even when
 // real attendance/picket/thematic activity exists.
-const OPERATIONAL_DETAILS = ["attendance", "picket", "thematic"];
+//
+// "thematic" (generic, single-tier) was replaced by two tiers that
+// attendance.service.ts's resolveThematicTierForCheckout looks up by exact
+// name: "Thematic Presenter" for users assigned to that day's thematic
+// schedule, "Thematic Participant" for everyone else checking out on a day
+// that has one.
+const OPERATIONAL_DETAILS = ["attendance", "picket", "Thematic Presenter", "Thematic Participant"];
 
 function exactCaseInsensitive(value: string): RegExp {
   const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
