@@ -54,7 +54,7 @@ const userService = {
           const days = Math.floor(remaining / (1000 * 60 * 60 * 24));
           const hours = Math.floor((remaining % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
           const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
-          throw new Error(`Foto baru bisa diubah dalam ${days} hari ${hours} jam ${minutes} menit lagi`);
+          throw new Error(`Photo can only be changed again in ${days} days ${hours} hours ${minutes} minutes`);
         }
       }
 

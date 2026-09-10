@@ -80,7 +80,7 @@ const attendanceController = {
       });
 
       if (existingCheckIn) {
-        return response({ res, code: 400, message: "Anda sudah melakukan check-in hari ini. Tidak bisa submit leave/sick request." });
+        return response({ res, code: 400, message: "You have already checked in today. You cannot submit a leave/sick request." });
       }
 
       const existingLeaveRequest = await attendanceRepository.findOne({
@@ -91,7 +91,7 @@ const attendanceController = {
       } as any);
 
       if (existingLeaveRequest) {
-        return response({ res, code: 400, message: "Anda sudah submit leave/sick request hari ini. Tidak bisa submit lagi" });
+        return response({ res, code: 400, message: "You have already submitted a leave/sick request today. You cannot submit again." });
       }
 
       if (req.file) {

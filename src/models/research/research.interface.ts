@@ -31,12 +31,12 @@ export const statusResearch = {
 } as const;
 
 export const RESEARCH_STATUS_LABELS: Record<ResearchStatus, string> = {
-  0: "Tidak Sesuai",
-  1: "Kurang Baik",
-  2: "Cukup Baik",
-  3: "Baik",
-  4: "Sangat Baik",
-  5: "Luar Biasa",
+  0: "Not Suitable",
+  1: "Poor",
+  2: "Fair",
+  3: "Good",
+  4: "Very Good",
+  5: "Excellent",
 };
 
 export type ResearchStatus = typeof statusResearch[keyof typeof statusResearch];
