@@ -60,7 +60,7 @@ const operationalRecordController = {
 
   getAllOperationalRecords: async (req: Request, res: Response): Promise<any> => {
     try {
-      const { scheduleId, userId, type, year, month, status } = req.query;
+      const { scheduleId, userId, type, year, month, date, status } = req.query;
       const filters: any = {};
 
       if (scheduleId) {
@@ -77,7 +77,11 @@ const operationalRecordController = {
         }
         filters.type = type as ScheduleType;
       }
-      if (year || month) {
+      if (date) {
+        const parsedDate = new Date(date as string);
+        if (isNaN(parsedDate.getTime())) return response({ res, code: 400, message: "Invalid date format" });
+        filters.date = parsedDate;
+      } else if (year || month) {
         const y = year ? parseInt(year as string) : new Date().getFullYear();
         const m = month ? parseInt(month as string) : new Date().getMonth() + 1;
         if (isNaN(y) || isNaN(m) || m < 1 || m > 12) {

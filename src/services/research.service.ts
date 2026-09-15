@@ -55,8 +55,8 @@ const researchService = {
     return await researchRepository.findResearchByUserId(userId);
   },
 
-  getMyResearch: async (userId: string): Promise<IResearch[]> => {
-    return await researchRepository.findMyResearch(userId);
+  getMyResearch: async (userId: string, date?: { year: number; month?: number }): Promise<IResearch[]> => {
+    return await researchRepository.findResearchWithFilters({ userId, date });
   },
 
   updateResearch: async (researchId: string, updateData: Partial<IResearch>): Promise<any> => {

@@ -165,11 +165,29 @@ const scheduleController = {
         }
 
         if (type) {
-          schedules = await scheduleService.getSchedulesByTypeAndEndDate(type as ScheduleType, end);
+          schedules = await scheduleService.getSchedulesByTypeAndDateRange(type as ScheduleType, start, end);
           message = `${type} schedules for date range retrieved successfully`;
         } else {
           schedules = await scheduleService.getSchedulesByDateRange(start, end);
           message = "Schedules for date range retrieved successfully";
+        }
+        return response({ res, code: 200, message, data: schedules });
+      }
+
+      if (startDate) {
+        const start = new Date(startDate as string);
+        if (isNaN(start.getTime())) {
+          return response({ res, code: 400, message: "Invalid startDate format" });
+        }
+        // No natural upper bound — far enough out to mean "no end date" in practice.
+        const farFuture = new Date(8640000000000000);
+
+        if (type) {
+          schedules = await scheduleService.getSchedulesByTypeAndDateRange(type as ScheduleType, start, farFuture);
+          message = `${type} schedules from date retrieved successfully`;
+        } else {
+          schedules = await scheduleService.getSchedulesByDateRange(start, farFuture);
+          message = "Schedules from date retrieved successfully";
         }
         return response({ res, code: 200, message, data: schedules });
       }

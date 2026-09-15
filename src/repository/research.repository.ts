@@ -22,7 +22,6 @@ const researchRepository = {
   findResearchByIdWithoutPopulate: (id: string) => Research.findById(id),
   findResearchByFilter: (filter: ResearchFilter) => Research.find(filter).populate("userId", "name").sort({ createdAt: -1 }),
   findResearchByUserId: (userId: string) => Research.find({ userId }).populate("userId", "name").sort({ createdAt: -1 }),
-  findMyResearch: (userId: string) => Research.find({ userId }).sort({ createdAt: -1 }),
   findResearchByWeek: (week: number) => Research.find({ week }).populate("userId", "name").sort({ createdAt: -1 }),
   findResearchByProgress: (progress: progressStatus) => Research.find({ progress }).populate("userId", "name").sort({ createdAt: -1 }),
   findResearchByStatus: (status: ResearchStatus) => Research.find({ status }).populate("userId", "name").sort({ createdAt: -1 }),

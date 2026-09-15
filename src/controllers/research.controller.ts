@@ -109,9 +109,23 @@ const researchController = {
     try {
       const userId = req.user?.id;
       if (!userId) return response({ res, code: 401, message: "Authentication required" });
-      const research = await researchService.getMyResearch(userId);
+
+      const { month, year } = req.query;
+      const dateFilter: { year: number; month?: number } | undefined = year
+        ? (() => {
+            const yearNum = parseInt(year as string);
+            if (isNaN(yearNum) || yearNum < 1900) throw new Error("Year must be a valid number");
+            if (!month) return { year: yearNum };
+            const monthNum = parseInt(month as string);
+            if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) throw new Error("Month must be a number between 1 and 12");
+            return { year: yearNum, month: monthNum };
+          })()
+        : undefined;
+
+      const research = await researchService.getMyResearch(userId, dateFilter);
       return response({ res, code: 200, message: "User research records retrieved successfully", data: research });
     } catch (error: any) {
+      if (error.message?.includes("must be")) return response({ res, code: 400, message: error.message });
       return response({ res, code: 500, message: "Failed to retrieve user research records" });
     }
   },
