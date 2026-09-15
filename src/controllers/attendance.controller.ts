@@ -191,12 +191,18 @@ const attendanceController = {
 
   getLeaveRequests: async (req: Request, res: Response): Promise<any> => {
     try {
-      const { year, month, day } = req.query;
+      const { year, month, activeOn } = req.query;
       const yearNum = year ? Number(year) : undefined;
       const monthNum = month ? Number(month) : undefined;
-      const dayNum = day ? Number(day) : undefined;
+      let activeOnDate: Date | undefined;
+      if (activeOn) {
+        activeOnDate = new Date(activeOn as string);
+        if (isNaN(activeOnDate.getTime())) {
+          return response({ res, code: 400, message: "Invalid activeOn date format" });
+        }
+      }
 
-      const requests = await attendanceService.getLeaveRequests(yearNum, monthNum, dayNum);
+      const requests = await attendanceService.getLeaveRequests(yearNum, monthNum, activeOnDate);
       return response({ res, code: 200, message: "All sick leave requests retrieved successfully", data: requests });
     } catch (error: any) {
       return response({ res, code: 500, message: error.message });

@@ -177,9 +177,13 @@ const attendanceService = {
     return convertAttendanceToIndonesiaTime(record);
   },
 
-  getLeaveRequests: async (year?: number, month?: number, day?: number): Promise<IAttendance[]> => {
-    if (year !== undefined || month !== undefined || day !== undefined) {
-      const records = await attendanceRepository.findAllWithApprovalStatusAndDate({ year, month, day });
+  getLeaveRequests: async (year?: number, month?: number, activeOn?: Date): Promise<IAttendance[]> => {
+    if (activeOn !== undefined) {
+      const records = await attendanceRepository.findAllWithApprovalStatusActiveOn(activeOn);
+      return records.map(convertAttendanceToIndonesiaTime);
+    }
+    if (year !== undefined && month !== undefined) {
+      const records = await attendanceRepository.findAllWithApprovalStatusByStartDateMonth(year, month);
       return records.map(convertAttendanceToIndonesiaTime);
     }
     const records = await attendanceRepository.findAllWithApprovalStatus();

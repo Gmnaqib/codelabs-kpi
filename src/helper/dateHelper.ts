@@ -3,12 +3,20 @@ import { DateTime } from "luxon";
 const ZONE = "Asia/Jakarta";
 
 const dateHelper = {
-  getStartOfDayWIB(): Date {
-    return DateTime.now().setZone(ZONE).startOf("day").toJSDate();
+  getStartOfDayWIB(date?: Date): Date {
+    const base = date ? DateTime.fromJSDate(date) : DateTime.now();
+    return base.setZone(ZONE).startOf("day").toJSDate();
   },
 
-  getEndOfDayWIB(): Date {
-    return DateTime.now().setZone(ZONE).endOf("day").toJSDate();
+  getEndOfDayWIB(date?: Date): Date {
+    const base = date ? DateTime.fromJSDate(date) : DateTime.now();
+    return base.setZone(ZONE).endOf("day").toJSDate();
+  },
+
+  getMonthRangeWIB(year: number, month: number): { start: Date; end: Date } {
+    const start = DateTime.fromObject({ year, month, day: 1 }, { zone: ZONE }).startOf("day").toJSDate();
+    const end = DateTime.fromObject({ year, month, day: 1 }, { zone: ZONE }).endOf("month").toJSDate();
+    return { start, end };
   },
 
   formatDateWIB(date: Date): string {
