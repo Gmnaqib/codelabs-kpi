@@ -130,14 +130,24 @@ const researchController = {
     }
   },
 
-  getResearchById: async (req: Request, res: Response): Promise<any> => {
+  getResearchById: async (req: AuthRequest, res: Response): Promise<any> => {
     try {
       const id = req.params.id as string;
       if (!Types.ObjectId.isValid(id)) {
         return response({ res, code: 400, message: "Invalid research ID format" });
       }
-      const research = await researchService.getResearchById(id);
+      const research: any = await researchService.getResearchById(id);
       if (!research) return response({ res, code: 404, message: "Research record not found" });
+
+      // Admin/lecturer/minister of research can moderate anyone's record;
+      // everyone else may only view their own (matches who can see /report).
+      const privilegedRoles = ["admin", "minister of research", "lecturer"];
+      const ownerId = research.userId?._id?.toString?.() ?? research.userId?.toString?.();
+      const isOwner = ownerId === req.user?.id;
+      if (!privilegedRoles.includes(req.user?.role ?? "") && !isOwner) {
+        return response({ res, code: 403, message: "You can only view your own research record" });
+      }
+
       return response({ res, code: 200, message: "Research record retrieved successfully", data: research });
     } catch (error: any) {
       return response({ res, code: 500, message: "Failed to retrieve research record" });

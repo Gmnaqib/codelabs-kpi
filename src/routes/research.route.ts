@@ -8,7 +8,22 @@ const researchRouter = Router();
 researchRouter.get("/", authenticateToken, roleMiddlewares(["admin", "minister of research", "lecturer"]), researchController.getAllResearch);
 researchRouter.get("/me", authenticateToken, researchController.getMyResearch);
 researchRouter.get("/summary", authenticateToken, researchController.getResearchSummary);
-researchRouter.get("/:id", authenticateToken, roleMiddlewares(["admin", "minister of research", "lecturer"]), researchController.getResearchById);
+researchRouter.get(
+  "/:id",
+  authenticateToken,
+  roleMiddlewares([
+    "admin",
+    "minister of research",
+    "minister of competition",
+    "minister of branding",
+    "minister of operation",
+    "lecturer",
+    "president",
+    "vice president",
+    "user",
+  ]),
+  researchController.getResearchById,
+);
 
 // researchRouter.get("/me/summary", authenticateToken, researchController.getMyResearchSummary);
 
