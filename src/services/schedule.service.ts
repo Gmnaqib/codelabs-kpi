@@ -1,6 +1,7 @@
 import scheduleRepository from "../repository/schedule.repository";
 import ISchedule, { ScheduleType } from "../models/schedule/schedule.interface";
 import { Types } from "mongoose";
+import dateHelper from "../helper/dateHelper";
 
 const MAX_PICKET_USERS_PER_DAY = 6;
 
@@ -28,7 +29,7 @@ const scheduleService = {
       throw new Error("Type and date are required");
     }
 
-    const dayOfWeek = date.getDay();
+    const dayOfWeek = dateHelper.getDayOfWeekWIB(date);
     if (dayOfWeek === 0) {
       throw new Error("Schedule date must be Monday to Saturday only");
     }
@@ -77,17 +78,17 @@ const scheduleService = {
     }
 
     const createdSchedules: ISchedule[] = [];
-    const currentDate = new Date(startDate);
-    currentDate.setHours(0, 0, 0, 0);
-
-    const endDateNormalized = new Date(endDate);
-    endDateNormalized.setHours(23, 59, 59, 999);
+    // Computed in WIB explicitly (not the server process's local timezone) —
+    // otherwise a server ever deployed with a timezone behind UTC would
+    // silently shift every generated schedule back by a day.
+    const currentDate = dateHelper.getStartOfDayWIB(startDate);
+    const endDateNormalized = dateHelper.getEndOfDayWIB(endDate);
 
     // Hitung occurrence per pattern+hari supaya rotasi piket konsisten dan tidak butuh filter manual lagi setelah dibuat
     const occurrenceCount: Record<string, number> = {};
 
     while (currentDate <= endDateNormalized) {
-      const dayOfWeek = currentDate.getDay();
+      const dayOfWeek = dateHelper.getDayOfWeekWIB(currentDate);
 
       for (let i = 0; i < patterns.length; i++) {
         const pattern = patterns[i];
@@ -105,16 +106,20 @@ const scheduleService = {
             description: pattern.description,
           };
 
-          // Hapus schedule lama di tanggal yang sama supaya tidak terjadi data dobel
-          await scheduleRepository.deleteSchedulesByTypeAndDate(type, currentDate);
-
-          const createdSchedule = await scheduleRepository.createSchedule(scheduleData);
-          createdSchedules.push(createdSchedule);
+          // Update the existing schedule for this day in place instead of
+          // delete+recreate — keeps its _id stable so OperationalRecord
+          // entries already pointing at it (e.g. a completed picket
+          // checkmark) don't get orphaned by a resubmit.
+          const savedSchedule = await scheduleRepository.upsertScheduleByTypeAndDate(type, currentDate, scheduleData);
+          createdSchedules.push(savedSchedule);
           break;
         }
       }
 
-      currentDate.setDate(currentDate.getDate() + 1);
+      // +24h instead of setDate(getDate() + 1) — Indonesia has no DST, so a
+      // fixed 24h step always lands on the next WIB calendar day regardless
+      // of the server process's own local timezone.
+      currentDate.setTime(currentDate.getTime() + 24 * 60 * 60 * 1000);
     }
 
     return createdSchedules;
@@ -140,15 +145,15 @@ const scheduleService = {
       }
 
       // Monday-Saturday only; Sunday is never a valid schedule day.
-      const dayOfWeek = entry.date.getDay();
+      const dayOfWeek = dateHelper.getDayOfWeekWIB(entry.date);
       if (dayOfWeek === 0) {
         throw new Error("Thematic schedule date must be Monday to Saturday only");
       }
 
-      // Hapus jadwal tematik lama di tanggal yang sama supaya tidak dobel saat resubmit
-      await scheduleRepository.deleteSchedulesByTypeAndDate(ScheduleType.thematic, entry.date);
-
-      const created = await scheduleRepository.createSchedule({
+      // Update the existing thematic schedule for this date in place instead
+      // of delete+recreate — keeps its _id stable so any OperationalRecord
+      // already pointing at it doesn't get orphaned by a resubmit.
+      const created = await scheduleRepository.upsertScheduleByTypeAndDate(ScheduleType.thematic, entry.date, {
         type: ScheduleType.thematic,
         date: entry.date,
         assignedUsers: entry.assignedUsers,
@@ -293,7 +298,7 @@ const scheduleService = {
 
     // Validate date is Monday-Friday if date is provided
     if (updateData.date) {
-      const dayOfWeek = updateData.date.getDay();
+      const dayOfWeek = dateHelper.getDayOfWeekWIB(updateData.date);
       if (dayOfWeek === 0 || dayOfWeek === 6) {
         throw new Error("Schedule date must be Monday to Friday only");
       }
@@ -322,7 +327,7 @@ const scheduleService = {
 
     // Validate date is Monday-Friday if date is provided
     if (updateData.date) {
-      const dayOfWeek = updateData.date.getDay();
+      const dayOfWeek = dateHelper.getDayOfWeekWIB(updateData.date);
       if (dayOfWeek === 0 || dayOfWeek === 6) {
         throw new Error("Schedule date must be Monday to Friday only");
       }

@@ -1,6 +1,7 @@
 import Schedule from "../models/schedule/schedule.schema";
 import ISchedule, { ScheduleType } from "../models/schedule/schedule.interface";
 import { Types } from "mongoose";
+import dateHelper from "../helper/dateHelper";
 
 // Type-safe filter interface
 interface ScheduleFilter {
@@ -19,10 +20,8 @@ const scheduleRepository = {
   findSchedulesByType: (type: ScheduleType) => Schedule.find({ type }).populate("assignedUsers", "_id nim name").sort({ date: -1, createdAt: -1 }),
 
   findSchedulesByDate: (date: Date) => {
-    const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(date);
-    endOfDay.setHours(23, 59, 59, 999);
+    const startOfDay = dateHelper.getStartOfDayWIB(date);
+    const endOfDay = dateHelper.getEndOfDayWIB(date);
 
     return Schedule.find({
       date: { $gte: startOfDay, $lte: endOfDay },
@@ -32,10 +31,8 @@ const scheduleRepository = {
   },
 
   findSchedulesByTypeAndDate: (type: ScheduleType, date: Date) => {
-    const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(date);
-    endOfDay.setHours(23, 59, 59, 999);
+    const startOfDay = dateHelper.getStartOfDayWIB(date);
+    const endOfDay = dateHelper.getEndOfDayWIB(date);
 
     return Schedule.find({
       type,
@@ -60,16 +57,19 @@ const scheduleRepository = {
       .populate("assignedUsers", "_id nim name")
       .sort({ date: 1 }),
 
-  deleteSchedulesByTypeAndDate: (type: ScheduleType, date: Date) => {
-    const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(date);
-    endOfDay.setHours(23, 59, 59, 999);
+  // Updates the existing schedule doc for that type+date in place (keeping
+  // its _id, so any OperationalRecord.scheduleId referencing it stays valid)
+  // or creates one if none exists yet — replaces the old delete-then-create
+  // pattern that orphaned completion records on resubmit.
+  upsertScheduleByTypeAndDate: (type: ScheduleType, date: Date, scheduleData: Partial<ISchedule>) => {
+    const startOfDay = dateHelper.getStartOfDayWIB(date);
+    const endOfDay = dateHelper.getEndOfDayWIB(date);
 
-    return Schedule.deleteMany({
-      type,
-      date: { $gte: startOfDay, $lte: endOfDay },
-    });
+    return Schedule.findOneAndUpdate(
+      { type, date: { $gte: startOfDay, $lte: endOfDay } },
+      { $set: scheduleData },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    ).populate("assignedUsers", "_id nim name");
   },
 
   updateScheduleById: (id: Types.ObjectId, updateData: Partial<ISchedule>) => Schedule.findByIdAndUpdate(id, updateData, { new: true }).populate("assignedUsers", "_id nim name"),

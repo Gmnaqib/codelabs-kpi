@@ -1,5 +1,6 @@
 import mongoose, { Schema } from "mongoose";
 import ISchedule from "./schedule.interface";
+import dateHelper from "../../helper/dateHelper";
 
 const ScheduleSchema = new Schema<ISchedule>(
   {
@@ -20,7 +21,7 @@ const ScheduleSchema = new Schema<ISchedule>(
 // Senin-Jumat; Thematic (tidak berulang mingguan seperti picket) boleh
 // sampai Sabtu.
 ScheduleSchema.pre("save", function (next) {
-  const dayOfWeek = this.date.getDay();
+  const dayOfWeek = dateHelper.getDayOfWeekWIB(this.date);
   // 0 = Minggu, 1 = Senin, ..., 5 = Jumat, 6 = Sabtu
   if (dayOfWeek === 0) {
     throw new Error("Schedule date must be Monday to Saturday only");
