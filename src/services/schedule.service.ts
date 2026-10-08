@@ -195,6 +195,44 @@ const scheduleService = {
     return schedules.map(capToActivePicketUsers);
   },
 
+  // Adds member(s) to a specific day's picket team — for a day whose
+  // (unrotated) team is still under the cap. Creates the day's schedule if
+  // one doesn't exist yet. Unlike createBatchSchedule, this never rotates or
+  // touches any other day.
+  addUsersToPicketSchedule: async (date: Date, userIds: Types.ObjectId[]): Promise<ISchedule> => {
+    if (!date || isNaN(date.getTime())) {
+      throw new Error("A valid date is required");
+    }
+    if (!userIds || userIds.length === 0) {
+      throw new Error("At least one userId is required");
+    }
+
+    const dayOfWeek = dateHelper.getDayOfWeekWIB(date);
+    if (dayOfWeek === 0 || dayOfWeek === 6) {
+      throw new Error("Picket schedule date must be Monday to Friday only");
+    }
+
+    const [existing] = await scheduleRepository.findSchedulesByTypeAndDate(ScheduleType.picket, date);
+    const existingIds = new Set((existing?.assignedUsers ?? []).map((u: any) => String(u?._id ?? u)));
+    const newIds = userIds.filter((id) => !existingIds.has(String(id)));
+
+    if (newIds.length === 0) {
+      throw new Error("These member(s) are already on this day's picket team");
+    }
+
+    if (existingIds.size + newIds.length > MAX_PICKET_USERS_PER_DAY) {
+      throw new Error(
+        `Adding ${newIds.length} member(s) would exceed the ${MAX_PICKET_USERS_PER_DAY}-person limit for this day (currently ${existingIds.size}).`
+      );
+    }
+
+    const updated = await scheduleRepository.addUsersToPicketScheduleByDate(date, newIds);
+    if (!updated) {
+      throw new Error("Failed to add members to the picket schedule");
+    }
+    return updated;
+  },
+
   // `date` defaults to today, same as getTodayPicketSchedule above.
   getTodayThematicSchedule: async (date: Date = new Date()): Promise<any[]> => {
     if (isNaN(date.getTime())) {

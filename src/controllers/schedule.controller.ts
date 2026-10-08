@@ -101,6 +101,38 @@ const scheduleController = {
     }
   },
 
+  addPicketMembers: async (req: AuthRequest, res: Response): Promise<any> => {
+    try {
+      const { date, userIds } = req.body;
+
+      if (!date) {
+        return response({ res, code: 400, message: "date is required" });
+      }
+      const targetDate = new Date(date);
+      if (isNaN(targetDate.getTime())) {
+        return response({ res, code: 400, message: "Invalid date format" });
+      }
+
+      if (!Array.isArray(userIds) || userIds.length === 0) {
+        return response({ res, code: 400, message: "userIds must be a non-empty array" });
+      }
+      for (const userId of userIds) {
+        if (!Types.ObjectId.isValid(userId)) {
+          return response({ res, code: 400, message: "Invalid userId format" });
+        }
+      }
+
+      const schedule = await scheduleService.addUsersToPicketSchedule(
+        targetDate,
+        userIds.map((id: string) => new Types.ObjectId(id))
+      );
+
+      return response({ res, code: 200, message: "Member(s) added to picket schedule successfully", data: schedule });
+    } catch (error: any) {
+      return response({ res, code: 400, message: error.message });
+    }
+  },
+
   getTodayPicketSchedule: async (req: Request, res: Response): Promise<any> => {
     try {
       const { date } = req.query;

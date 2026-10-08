@@ -72,6 +72,24 @@ const scheduleRepository = {
     ).populate("assignedUsers", "_id nim name");
   },
 
+  // Appends user(s) to a specific day's picket schedule (creating it if it
+  // doesn't exist yet) without touching any other field or day — distinct
+  // from upsertScheduleByTypeAndDate above, which replaces the whole
+  // assignedUsers list.
+  addUsersToPicketScheduleByDate: (date: Date, userIds: Types.ObjectId[]) => {
+    const startOfDay = dateHelper.getStartOfDayWIB(date);
+    const endOfDay = dateHelper.getEndOfDayWIB(date);
+
+    return Schedule.findOneAndUpdate(
+      { type: ScheduleType.picket, date: { $gte: startOfDay, $lte: endOfDay } },
+      {
+        $addToSet: { assignedUsers: { $each: userIds } },
+        $setOnInsert: { type: ScheduleType.picket, date: startOfDay },
+      },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    ).populate("assignedUsers", "_id nim name");
+  },
+
   updateScheduleById: (id: Types.ObjectId, updateData: Partial<ISchedule>) => Schedule.findByIdAndUpdate(id, updateData, { new: true }).populate("assignedUsers", "_id nim name"),
   updateSchedule: (filter: ScheduleFilter, updateData: Partial<ISchedule>) => Schedule.updateOne(filter, updateData),
   deleteScheduleById: (id: Types.ObjectId) => Schedule.findByIdAndDelete(id),
