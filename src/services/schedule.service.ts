@@ -23,6 +23,24 @@ const capToActivePicketUsers = (schedule: ISchedule & { toObject: () => any }) =
 
 const toPlainSchedule = (schedule: ISchedule & { toObject: () => any }) => schedule.toObject();
 
+// Safety net against the same person ending up twice in one day's
+// assignedUsers (e.g. a client sending a malformed/duplicated list directly,
+// bypassing the frontend's own dedupe) — a duplicate there is never useful:
+// OperationalRecord is keyed by (scheduleId, userId), so a repeated entry
+// can't even be tracked as a distinct attendance slot.
+const dedupeObjectIds = (ids: Types.ObjectId[]): Types.ObjectId[] => {
+  const seen = new Set<string>();
+  const result: Types.ObjectId[] = [];
+  for (const id of ids) {
+    const key = String(id);
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push(id);
+    }
+  }
+  return result;
+};
+
 const scheduleService = {
   createSchedule: async (type: ScheduleType, date: Date, assignedUsers?: Types.ObjectId[], description?: string): Promise<ISchedule> => {
     if (!type || !date) {
@@ -77,6 +95,11 @@ const scheduleService = {
       }
     }
 
+    const normalizedPatterns = patterns.map((pattern) => ({
+      ...pattern,
+      assignedUsers: dedupeObjectIds(pattern.assignedUsers),
+    }));
+
     const createdSchedules: ISchedule[] = [];
     // Computed in WIB explicitly (not the server process's local timezone) —
     // otherwise a server ever deployed with a timezone behind UTC would
@@ -90,8 +113,8 @@ const scheduleService = {
     while (currentDate <= endDateNormalized) {
       const dayOfWeek = dateHelper.getDayOfWeekWIB(currentDate);
 
-      for (let i = 0; i < patterns.length; i++) {
-        const pattern = patterns[i];
+      for (let i = 0; i < normalizedPatterns.length; i++) {
+        const pattern = normalizedPatterns[i];
         if (pattern.daysOfWeek.includes(dayOfWeek)) {
           const occurrenceKey = `${i}-${dayOfWeek}`;
           const occurrence = occurrenceCount[occurrenceKey] ?? 0;
@@ -156,7 +179,7 @@ const scheduleService = {
       const created = await scheduleRepository.upsertScheduleByTypeAndDate(ScheduleType.thematic, entry.date, {
         type: ScheduleType.thematic,
         date: entry.date,
-        assignedUsers: entry.assignedUsers,
+        assignedUsers: dedupeObjectIds(entry.assignedUsers),
         description: entry.description,
       });
       createdSchedules.push(created);
