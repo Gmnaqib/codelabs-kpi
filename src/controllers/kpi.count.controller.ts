@@ -5,17 +5,33 @@ import userRepository from "../repository/user.repository";
 import response from "../helper/response";
 import { Status } from "../models/user/user.interface";
 
-const parseDateFilter = (query: any): { year: number; month?: number } | undefined => {
+// Always returns a concrete {year, month} — never undefined. An HTTP caller
+// that omits/garbles `year` used to silently fall through to
+// KPICountService's unscoped "all-time" mode (dateFilter === undefined),
+// which made REQUIRED items' Math.min(totalRaw, detail.point) cap against a
+// user's entire history instead of just the current month — once a user's
+// lifetime total crossed that cap, every later month's new activity stopped
+// visibly adding points, with no error or indication anything had changed
+// scope. All-time mode is still reachable, but only by calling
+// KPICountService's functions directly with no dateFilter (as the internal
+// check-kpi-summary.ts / migrate-kpi-baseline.ts scripts intentionally do)
+// — never implicitly from a request missing a query param.
+const parseDateFilter = (query: any): { year: number; month?: number } => {
   const { year, month } = query;
-  if (!year) return undefined;
+  const now = new Date();
+
   const yearNum = parseInt(year as string);
-  if (isNaN(yearNum) || yearNum < 1900) return undefined;
+  const hasValidYear = year !== undefined && year !== "" && !isNaN(yearNum) && yearNum >= 1900;
+  if (!hasValidYear) {
+    return { year: now.getFullYear(), month: now.getMonth() + 1 };
+  }
+
+  // year given but month omitted/invalid is a deliberate "whole year" view
+  // (see buildDateFilter's year-only branch) — not defaulted to this month.
   const dateFilter: { year: number; month?: number } = { year: yearNum };
-  if (month) {
-    const monthNum = parseInt(month as string);
-    if (!isNaN(monthNum) && monthNum >= 1 && monthNum <= 12) {
-      dateFilter.month = monthNum;
-    }
+  const monthNum = parseInt(month as string);
+  if (month !== undefined && month !== "" && !isNaN(monthNum) && monthNum >= 1 && monthNum <= 12) {
+    dateFilter.month = monthNum;
   }
   return dateFilter;
 };
