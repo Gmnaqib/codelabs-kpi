@@ -103,6 +103,13 @@ const KPICountService = {
     const baselines: any[] = dateFilter ? [] : await KPIBaselineRepository.findBaselinesByUserId(userId);
     const baselineByMasterId = new Map(baselines.map((b: any) => [b.id_kpi_master.toString(), b]));
 
+    // When viewing a specific month/year, the REQUIRED-item cap below should
+    // reflect whatever point value was in effect as of the END of that
+    // period — not today's live value — so a past month's displayed total
+    // doesn't retroactively shift when someone edits a KPI detail later.
+    // Lifetime view (no dateFilter) keeps using the live value, same as before.
+    const atDate: Date | undefined = dateRange?.$lte;
+
     for (const master of masters) {
       const details: any[] = preloaded?.detailsByMaster
         ? preloaded.detailsByMaster.get(master._id.toString()) ?? []
@@ -110,12 +117,16 @@ const KPICountService = {
       const detailResults: any[] = [];
       const baseline = baselineByMasterId.get(master._id.toString());
       const cutoffDate: Date | undefined = baseline?.cutoffDate;
+      const effectiveCapByDetailId = atDate
+        ? await KPIRepository.findEffectivePointsAt(details.map((d: any) => d._id), atDate)
+        : new Map<string, number>();
 
       for (const detail of details) {
         let jumlah_activity = 0;
         let point_akhir = 0;
         const kementerian = master.kementerian.toLowerCase();
         const detailId = detail._id.toString();
+        const effectiveCap = effectiveCapByDetailId.get(detailId) ?? detail.point;
 
         if (kementerian === "operational") {
           const effectiveRange = dateHelper.applyCutoffToRange(dateRange ?? undefined, cutoffDate);
@@ -153,7 +164,7 @@ const KPICountService = {
           }, 0);
           const totalRaw = operationalPoints + attendancePoints;
 
-          point_akhir = detail.label === "REQUIRED" ? Math.min(totalRaw, detail.point) : totalRaw;
+          point_akhir = detail.label === "REQUIRED" ? Math.min(totalRaw, effectiveCap) : totalRaw;
           point_akhir = Math.floor(point_akhir * 10) / 10;
 
         } else if (kementerian === "research") {
@@ -174,7 +185,7 @@ const KPICountService = {
             return sum + point;
           }, 0);
 
-          point_akhir = detail.label === "REQUIRED" ? Math.min(rawTotal, detail.point) : rawTotal;
+          point_akhir = detail.label === "REQUIRED" ? Math.min(rawTotal, effectiveCap) : rawTotal;
           point_akhir = Math.floor(point_akhir * 10) / 10;
 
         } else if (kementerian === "branding") {
@@ -193,7 +204,7 @@ const KPICountService = {
             return sum + point;
           }, 0);
 
-          point_akhir = detail.label === "REQUIRED" ? Math.min(rawBranding, detail.point) : rawBranding;
+          point_akhir = detail.label === "REQUIRED" ? Math.min(rawBranding, effectiveCap) : rawBranding;
           point_akhir = Math.floor(point_akhir * 10) / 10;
 
         } else if (kementerian === "competition") {
@@ -212,7 +223,7 @@ const KPICountService = {
             return sum + point;
           }, 0);
 
-          point_akhir = detail.label === "REQUIRED" ? Math.min(rawCompetition, detail.point) : rawCompetition;
+          point_akhir = detail.label === "REQUIRED" ? Math.min(rawCompetition, effectiveCap) : rawCompetition;
           point_akhir = Math.floor(point_akhir * 10) / 10;
         }
 

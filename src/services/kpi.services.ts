@@ -73,7 +73,19 @@ const KPIItemService = {
       }
     }
 
-    return await KPIRepository.createDetail(data);
+    const created = await KPIRepository.createDetail(data);
+
+    // Initial history entry, so a lookup for any month from creation onward
+    // finds a value even before the detail is ever edited.
+    await KPIRepository.recordDetailHistory({
+      id_kpi_detail: created._id,
+      point: created.point,
+      max_activity: created.max_activity,
+      label: created.label,
+      effectiveFrom: (created as any).createdAt ?? new Date(),
+    });
+
+    return created;
   },
 
   findAllDetails: async (): Promise<IKPIDetail[]> => {
@@ -89,30 +101,49 @@ const KPIItemService = {
   },
 
   updateDetail: async (id: string, data: Partial<IKPIDetail>): Promise<IKPIDetail | null> => {
-      if (data.point !== undefined) {
-        const existingDetail = await KPIRepository.findDetailById(id);
-        if (!existingDetail) throw new Error("KPI Detail not found");
+    const existingDetail = await KPIRepository.findDetailById(id);
+    if (!existingDetail) throw new Error("KPI Detail not found");
 
-        const label = data.label || existingDetail.label;
-        const masterId = existingDetail.id_kpi_master.toString();
+    if (data.point !== undefined) {
+      const label = data.label || existingDetail.label;
+      const masterId = existingDetail.id_kpi_master.toString();
 
-        if (label === "REQUIRED") {
-          const master = await KPIRepository.findMasterById(masterId);
-          if (!master) throw new Error("KPI Master not found");
+      if (label === "REQUIRED") {
+        const master = await KPIRepository.findMasterById(masterId);
+        if (!master) throw new Error("KPI Master not found");
 
-          const allDetails = await KPIRepository.findDetailsByMasterId(masterId);
-          const totalRequired = allDetails
-            .filter((d) => d.label === "REQUIRED" && d._id.toString() !== id)
-            .reduce((sum, d) => sum + d.point, 0);
+        const allDetails = await KPIRepository.findDetailsByMasterId(masterId);
+        const totalRequired = allDetails
+          .filter((d) => d.label === "REQUIRED" && d._id.toString() !== id)
+          .reduce((sum, d) => sum + d.point, 0);
 
-          const newTotal = totalRequired + data.point;
-          if (newTotal > master.point) {
-            throw new Error(`Exceeds ministry weight (${master.point}%). Others: ${totalRequired}%, requested: ${data.point}%`);
-          }
+        const newTotal = totalRequired + data.point;
+        if (newTotal > master.point) {
+          throw new Error(`Exceeds ministry weight (${master.point}%). Others: ${totalRequired}%, requested: ${data.point}%`);
         }
       }
+    }
 
-    return await KPIRepository.updateDetail(id, data);
+    const updated = await KPIRepository.updateDetail(id, data);
+    if (!updated) return null;
+
+    // Record a history entry whenever a field that feeds the REQUIRED cap
+    // actually changes, so a past month's displayed total keeps using
+    // whatever value was in effect back then instead of today's edit.
+    const pointChanged = data.point !== undefined && data.point !== existingDetail.point;
+    const maxActivityChanged = data.max_activity !== undefined && data.max_activity !== existingDetail.max_activity;
+    const labelChanged = data.label !== undefined && data.label !== existingDetail.label;
+    if (pointChanged || maxActivityChanged || labelChanged) {
+      await KPIRepository.recordDetailHistory({
+        id_kpi_detail: updated._id,
+        point: updated.point,
+        max_activity: updated.max_activity,
+        label: updated.label,
+        effectiveFrom: new Date(),
+      });
+    }
+
+    return updated;
   },
 
   deleteDetail: async (id: string): Promise<IKPIDetail | null> => {
