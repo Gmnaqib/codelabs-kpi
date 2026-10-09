@@ -17,6 +17,7 @@ import researchRouter from "./routes/research.route";
 import competitionRouter from "./routes/competition.route";
 import brandingRouter from "./routes/branding.route";
 import kpiItemRouter from "./routes/kpi.route";
+import pointWalletRouter from "./routes/pointWallet.route";
 import productRouter from "./routes/product.route";
 import debugRouter from "./routes/debug.route";
 import cors from "cors";
@@ -70,6 +71,7 @@ app.use("/research", researchRouter);
 app.use("/competition", competitionRouter);
 app.use("/branding", brandingRouter);
 app.use("/kpi", kpiItemRouter);
+app.use("/wallet", pointWalletRouter);
 app.use("/products", productRouter);
 app.use("/debug", debugRouter);
 
