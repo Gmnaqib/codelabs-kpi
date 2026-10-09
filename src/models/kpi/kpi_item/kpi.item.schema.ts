@@ -40,6 +40,13 @@ const kpiDetailSchema = new Schema<IKPIDetail>(
       type: Number,
       required: true,
     },
+    // Soft-delete flag — "deleted" details stay in the database (so already-
+    // recorded history keeps aggregating correctly) but are hidden from
+    // admin listings and from selection when creating new activity.
+    is_active: {
+      type: Boolean,
+      default: true,
+    },
   },
   { timestamps: true },
 );

@@ -22,6 +22,7 @@ kpiItemRouter.get("/detail", authenticateToken, KPIItemController.getAllDetails)
 kpiItemRouter.get("/detail/:masterId", authenticateToken, KPIItemController.getDetailsByMasterId);
 kpiItemRouter.put("/detail/:id", authenticateToken, roleMiddlewares(["admin"]), KPIItemController.updateDetail);
 kpiItemRouter.delete("/detail/:id", authenticateToken, roleMiddlewares(["admin"]), KPIItemController.deleteDetail);
+kpiItemRouter.patch("/detail/:id/reactivate", authenticateToken, roleMiddlewares(["admin"]), KPIItemController.reactivateDetail);
 
 // KPI Summary & Statistic
 kpiItemRouter.get("/research/me", authenticateToken, KPICountController.getMyResearchSummary);

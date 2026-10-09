@@ -39,7 +39,7 @@ const KPIItemService = {
         throw new Error(`Weight exceeds 100%. Others: ${totalLain}%, requested: ${data.point}%`);
       }
 
-      const existingDetails = await KPIRepository.findDetailsByMasterId(id);
+      const existingDetails = await KPIRepository.findActiveDetailsByMasterId(id);
       const requiredTotal = existingDetails
         .filter((d) => d.label === "REQUIRED")
         .reduce((sum, d) => sum + d.point, 0);
@@ -62,7 +62,7 @@ const KPIItemService = {
       const master = await KPIRepository.findMasterById(data.id_kpi_master.toString());
       if (!master) throw new Error("KPI Master not found");
 
-      const existingDetails = await KPIRepository.findDetailsByMasterId(data.id_kpi_master.toString());
+      const existingDetails = await KPIRepository.findActiveDetailsByMasterId(data.id_kpi_master.toString());
       const totalRequired = existingDetails
         .filter((d) => d.label === "REQUIRED")
         .reduce((sum, d) => sum + d.point, 0);
@@ -97,7 +97,7 @@ const KPIItemService = {
   },
 
   findDetailsByMasterId: async (masterId: string): Promise<IKPIDetail[]> => {
-    return await KPIRepository.findDetailsByMasterId(masterId);
+    return await KPIRepository.findActiveDetailsByMasterId(masterId);
   },
 
   updateDetail: async (id: string, data: Partial<IKPIDetail>): Promise<IKPIDetail | null> => {
@@ -112,7 +112,7 @@ const KPIItemService = {
         const master = await KPIRepository.findMasterById(masterId);
         if (!master) throw new Error("KPI Master not found");
 
-        const allDetails = await KPIRepository.findDetailsByMasterId(masterId);
+        const allDetails = await KPIRepository.findActiveDetailsByMasterId(masterId);
         const totalRequired = allDetails
           .filter((d) => d.label === "REQUIRED" && d._id.toString() !== id)
           .reduce((sum, d) => sum + d.point, 0);
@@ -146,8 +146,16 @@ const KPIItemService = {
     return updated;
   },
 
+  // Soft delete: hides the item from listings/selection, but keeps the
+  // document (and every record's id_kpi_detail reference to it) intact so
+  // already-recorded history keeps aggregating correctly. See
+  // KPIRepository.deactivateDetail / findActiveDetailsByMasterId.
   deleteDetail: async (id: string): Promise<IKPIDetail | null> => {
-    return await KPIRepository.deleteDetail(id);
+    return await KPIRepository.deactivateDetail(id);
+  },
+
+  reactivateDetail: async (id: string): Promise<IKPIDetail | null> => {
+    return await KPIRepository.reactivateDetail(id);
   },
 };
 

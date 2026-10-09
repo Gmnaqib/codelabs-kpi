@@ -120,16 +120,27 @@ const KPIItemController = {
   deleteDetail: async (req: AuthRequest, res: Response): Promise<any> => {
     try {
       const id = req.params.id as string;
-      // Memanggil fungsi soft delete pada service (mengubah is_active menjadi false)
       const data = await KPIItemService.deleteDetail(id);
       if (!data) return response({ res, code: 404, message: "KPI detail not found" });
-      
-      return response({ 
-        res, 
-        code: 200, 
-        message: "KPI detail deleted (archived) successfully", 
-        data 
+
+      return response({
+        res,
+        code: 200,
+        message: "KPI detail deleted (archived) successfully",
+        data
       });
+    } catch (error: any) {
+      return response({ res, code: 400, message: error.message });
+    }
+  },
+
+  reactivateDetail: async (req: AuthRequest, res: Response): Promise<any> => {
+    try {
+      const id = req.params.id as string;
+      const data = await KPIItemService.reactivateDetail(id);
+      if (!data) return response({ res, code: 404, message: "KPI detail not found" });
+
+      return response({ res, code: 200, message: "KPI detail reactivated successfully", data });
     } catch (error: any) {
       return response({ res, code: 400, message: error.message });
     }

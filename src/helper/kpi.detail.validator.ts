@@ -9,7 +9,13 @@ import { KPIMaster } from "../models/kpi/kpi_item/kpi.item.schema";
 export const resolveKpiDetailId = async (kementerian: string, kpiItem: string) => {
   const master = await KPIMaster.findOne({ kementerian: { $regex: new RegExp(`^${kementerian}$`, "i") } });
   if (!master) return undefined;
-  const detail = await KPIDetail.findOne({ id_kpi_master: master._id, kpi_item: { $regex: new RegExp(`^${kpiItem}$`, "i") } });
+  // Excludes soft-deleted details — new activity shouldn't attach to an item
+  // that's been "deleted", even though old records referencing it still count.
+  const detail = await KPIDetail.findOne({
+    id_kpi_master: master._id,
+    kpi_item: { $regex: new RegExp(`^${kpiItem}$`, "i") },
+    is_active: { $ne: false },
+  });
   return detail?._id;
 };
 

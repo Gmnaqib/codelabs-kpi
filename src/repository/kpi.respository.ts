@@ -30,7 +30,17 @@ const KPIRepository = {
   findDetailById: (id: string) => KPIDetail.findById(new Types.ObjectId(id)),
   findDetailByFilter: (filter: KPIDetailFilter) => KPIDetail.find(filter),
   findDetailsByMasterId: (masterId: string) => KPIDetail.find({ id_kpi_master: new Types.ObjectId(masterId) }),
+  // Excludes soft-deleted details — for admin listings and "pick a category"
+  // dropdowns, as opposed to findDetailsByMasterId above (used by the point
+  // summary engine, which must keep including inactive details so already-
+  // recorded history doesn't disappear).
+  findActiveDetailsByMasterId: (masterId: string) =>
+    KPIDetail.find({ id_kpi_master: new Types.ObjectId(masterId), is_active: { $ne: false } }),
   updateDetail: (id: string, data: Partial<IKPIDetail>) => KPIDetail.findByIdAndUpdate(new Types.ObjectId(id), data, { new: true }),
+  // Soft delete — keeps the document (and every record referencing it)
+  // intact, just hides it from future selection. See findActiveDetailsByMasterId.
+  deactivateDetail: (id: string) => KPIDetail.findByIdAndUpdate(new Types.ObjectId(id), { is_active: false }, { new: true }),
+  reactivateDetail: (id: string) => KPIDetail.findByIdAndUpdate(new Types.ObjectId(id), { is_active: true }, { new: true }),
   deleteDetail: (id: string) => KPIDetail.findByIdAndDelete(new Types.ObjectId(id)),
 
   // KPI Detail history (point-in-time snapshots of point/max_activity/label)
