@@ -2,6 +2,7 @@ import mongoose, { Schema } from "mongoose";
 import IOperationalRecord from "./operational.interface";
 import { ScheduleType } from "../schedule/schedule.interface";
 import { kpiSnapshotSchema } from "../kpi/kpi_snapshot.interface";
+import dateHelper from "../../helper/dateHelper";
 
 const operationalRecordSchema = new Schema<IOperationalRecord>(
   {
@@ -17,9 +18,11 @@ const operationalRecordSchema = new Schema<IOperationalRecord>(
 );
 
 operationalRecordSchema.pre("save", function (next) {
-  const dayOfWeek = this.date.getDay();
-  if (dayOfWeek === 0 || dayOfWeek === 6) {
-    throw new Error("Operational record date must be Monday to Friday only");
+  // Matches Schedule's own rule (Senin-Sabtu, Minggu tidak pernah valid) —
+  // computed in WIB, not the server process's local timezone.
+  const dayOfWeek = dateHelper.getDayOfWeekWIB(this.date);
+  if (dayOfWeek === 0) {
+    throw new Error("Operational record date must be Monday to Saturday only");
   }
   next();
 });

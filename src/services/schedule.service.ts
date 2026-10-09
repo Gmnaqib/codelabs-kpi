@@ -51,9 +51,6 @@ const scheduleService = {
     if (dayOfWeek === 0) {
       throw new Error("Schedule date must be Monday to Saturday only");
     }
-    if (type === ScheduleType.picket && dayOfWeek === 6) {
-      throw new Error("Picket schedule date must be Monday to Friday only");
-    }
 
     const scheduleData: Partial<ISchedule> = { type, date };
     if (assignedUsers) scheduleData.assignedUsers = assignedUsers;
@@ -89,9 +86,9 @@ const scheduleService = {
         throw new Error("Each pattern must have at least one assignedUser");
       }
 
-      const invalidDays = pattern.daysOfWeek.filter((day) => day < 1 || day > 5);
+      const invalidDays = pattern.daysOfWeek.filter((day) => day < 1 || day > 6);
       if (invalidDays.length > 0) {
-        throw new Error("daysOfWeek must only contain Monday-Friday (1-5)");
+        throw new Error("daysOfWeek must only contain Monday-Saturday (1-6)");
       }
     }
 
@@ -231,8 +228,8 @@ const scheduleService = {
     }
 
     const dayOfWeek = dateHelper.getDayOfWeekWIB(date);
-    if (dayOfWeek === 0 || dayOfWeek === 6) {
-      throw new Error("Picket schedule date must be Monday to Friday only");
+    if (dayOfWeek === 0) {
+      throw new Error("Picket schedule date must be Monday to Saturday only");
     }
 
     const [existing] = await scheduleRepository.findSchedulesByTypeAndDate(ScheduleType.picket, date);
@@ -357,11 +354,11 @@ const scheduleService = {
       throw new Error("Invalid schedule ID format");
     }
 
-    // Validate date is Monday-Friday if date is provided
+    // Validate date is Monday-Saturday if date is provided
     if (updateData.date) {
       const dayOfWeek = dateHelper.getDayOfWeekWIB(updateData.date);
-      if (dayOfWeek === 0 || dayOfWeek === 6) {
-        throw new Error("Schedule date must be Monday to Friday only");
+      if (dayOfWeek === 0) {
+        throw new Error("Schedule date must be Monday to Saturday only");
       }
     }
 
@@ -386,11 +383,11 @@ const scheduleService = {
       throw new Error("Invalid schedule ID format");
     }
 
-    // Validate date is Monday-Friday if date is provided
+    // Validate date is Monday-Saturday if date is provided
     if (updateData.date) {
       const dayOfWeek = dateHelper.getDayOfWeekWIB(updateData.date);
-      if (dayOfWeek === 0 || dayOfWeek === 6) {
-        throw new Error("Schedule date must be Monday to Friday only");
+      if (dayOfWeek === 0) {
+        throw new Error("Schedule date must be Monday to Saturday only");
       }
     }
 

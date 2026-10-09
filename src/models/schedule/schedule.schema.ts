@@ -17,17 +17,13 @@ const ScheduleSchema = new Schema<ISchedule>(
   { timestamps: true },
 );
 
-// Minggu tidak pernah valid untuk jadwal apa pun. Picket masih dibatasi
-// Senin-Jumat; Thematic (tidak berulang mingguan seperti picket) boleh
-// sampai Sabtu.
+// Minggu tidak pernah valid untuk jadwal apa pun (picket maupun thematic) —
+// keduanya boleh Senin-Sabtu.
 ScheduleSchema.pre("save", function (next) {
   const dayOfWeek = dateHelper.getDayOfWeekWIB(this.date);
-  // 0 = Minggu, 1 = Senin, ..., 5 = Jumat, 6 = Sabtu
+  // 0 = Minggu, 1 = Senin, ..., 6 = Sabtu
   if (dayOfWeek === 0) {
     throw new Error("Schedule date must be Monday to Saturday only");
-  }
-  if (this.type === "picket" && dayOfWeek === 6) {
-    throw new Error("Picket schedule date must be Monday to Friday only");
   }
   next();
 });

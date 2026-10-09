@@ -4,6 +4,7 @@ import response from "../helper/response";
 import IOperationalRecord from "../models/operationalRecord/operational.interface";
 import { ScheduleType } from "../models/schedule/schedule.interface";
 import { Types } from "mongoose";
+import dateHelper from "../helper/dateHelper";
 
 const operationalRecordController = {
   createOperationalRecord: async (req: Request, res: Response): Promise<any> => {
@@ -46,9 +47,9 @@ const operationalRecordController = {
         return response({ res, code: 400, message: "Invalid date format" });
       }
 
-      const dayOfWeek = recordData.date.getDay();
-      if (dayOfWeek === 0 || dayOfWeek === 6) {
-        return response({ res, code: 400, message: "Date must be Monday to Friday only" });
+      const dayOfWeek = dateHelper.getDayOfWeekWIB(recordData.date);
+      if (dayOfWeek === 0) {
+        return response({ res, code: 400, message: "Date must be Monday to Saturday only" });
       }
 
       const newRecord = await operationalRecordService.createOperationalRecord(recordData);
