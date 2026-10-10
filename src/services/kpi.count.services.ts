@@ -94,7 +94,7 @@ const KPICountService = {
 
   getMyKPISummary: async (userId: string, dateFilter?: { year: number; month?: number }, preloaded?: PreloadedKpiData) => {
     const userObjectId = new Types.ObjectId(userId);
-    const user = preloaded?.user ?? await userRepository.findUserById(userId);
+    const user = preloaded?.user ?? await userRepository.findUserByIdWithBanner(userId);
     if (!user) throw new Error("User not found");
 
     const dateRange = buildDateFilter(dateFilter);
@@ -297,6 +297,7 @@ const KPICountService = {
       userId: userObjectId,
       name: user.name,
       image: (user as any).image ?? null,
+      banner: (user as any).active_banner_id?.image ?? null,
       month: dateFilter?.month ?? new Date().getMonth() + 1,
       year: dateFilter?.year ?? new Date().getFullYear(),
       categories,
@@ -305,7 +306,7 @@ const KPICountService = {
   },
 
   getAllKPISummary: async (dateFilter?: { year: number; month?: number }) => {
-    const allUsers = await userRepository.findUsersByFilter({ status: Status.active, role: { $ne: Role.Lecturer } } as any);
+    const allUsers = await userRepository.findUsersByFilterWithBanner({ status: Status.active, role: { $ne: Role.Lecturer } } as any);
     const { masters, detailsByMaster } = await loadKpiConfig();
 
     const summaries = await Promise.all(

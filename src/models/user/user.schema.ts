@@ -92,6 +92,11 @@ const userSchema = new Schema<IUser>(
       type: Date,
       required: false,
     },
+    active_banner_id: {
+      type: Schema.Types.ObjectId,
+      ref: "Banner",
+      default: null,
+    },
   },
   { timestamps: true },
 );
