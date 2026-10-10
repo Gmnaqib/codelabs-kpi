@@ -298,6 +298,7 @@ const KPICountService = {
       name: user.name,
       image: (user as any).image ?? null,
       banner: (user as any).active_banner_id?.image ?? null,
+      frame: (user as any).active_frame_id?.image ?? null,
       month: dateFilter?.month ?? new Date().getMonth() + 1,
       year: dateFilter?.year ?? new Date().getFullYear(),
       categories,

@@ -1,9 +1,13 @@
 import { Schema, model } from "mongoose";
-import { IBanner, IUserBanner } from "./banner.interface";
+import { IBanner, IUserBanner, BannerType } from "./banner.interface";
 
 const bannerSchema = new Schema<IBanner>(
   {
     name: { type: String, required: true },
+    // Defaults to name_background so banners created before this field
+    // existed keep behaving exactly as they did (they were all name
+    // backgrounds, there was no other type yet).
+    type: { type: String, enum: Object.values(BannerType), default: BannerType.NameBackground, required: true },
     point_cost: { type: Number, required: true, min: 0 },
     image: { type: String, required: true },
   },

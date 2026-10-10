@@ -18,6 +18,7 @@ interface IUser {
   product_id?: string;
   image_updated_at?: Date;
   active_banner_id?: string | null;
+  active_frame_id?: string | null;
 }
 
 export enum Role {

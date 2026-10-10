@@ -81,6 +81,7 @@ const KPICountController = {
           name: s.name,
           image: s.image ?? null,
           banner: (s as any).banner ?? null,
+          frame: (s as any).frame ?? null,
           totalPoints: s.grand_total,
           grand_total: s.grand_total,
           categories: s.categories,

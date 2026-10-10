@@ -97,6 +97,11 @@ const userSchema = new Schema<IUser>(
       ref: "Banner",
       default: null,
     },
+    active_frame_id: {
+      type: Schema.Types.ObjectId,
+      ref: "Banner",
+      default: null,
+    },
   },
   { timestamps: true },
 );

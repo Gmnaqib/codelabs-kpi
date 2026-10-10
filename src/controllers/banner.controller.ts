@@ -1,14 +1,19 @@
 import { Response } from "express";
 import { AuthRequest } from "../middlewares/auth.middlewares";
 import bannerService from "../services/banner.service";
+import { BannerType } from "../models/banner/banner.interface";
 import response from "../helper/response";
 
 const BannerController = {
   createBanner: async (req: AuthRequest, res: Response): Promise<any> => {
     try {
-      const { name, point_cost } = req.body;
+      const { name, type, point_cost } = req.body;
       const file = (req as any).file as Express.Multer.File | undefined;
       if (!file) return response({ res, code: 400, message: "image file is required" });
+
+      if (!Object.values(BannerType).includes(type)) {
+        return response({ res, code: 400, message: `type must be one of: ${Object.values(BannerType).join(", ")}` });
+      }
 
       const pointCostNum = Number(point_cost);
       if (!point_cost || isNaN(pointCostNum) || pointCostNum < 0) {
@@ -16,7 +21,7 @@ const BannerController = {
       }
 
       const image = `/uploads/banners/${file.filename}`;
-      const banner = await bannerService.createBanner({ name, point_cost: pointCostNum, image });
+      const banner = await bannerService.createBanner({ name, type, point_cost: pointCostNum, image });
       return response({ res, code: 201, message: "Banner created successfully", data: banner });
     } catch (error: any) {
       return response({ res, code: 400, message: error.message });
@@ -35,11 +40,17 @@ const BannerController = {
   updateBanner: async (req: AuthRequest, res: Response): Promise<any> => {
     try {
       const id = req.params.id as string;
-      const { name, point_cost } = req.body;
+      const { name, type, point_cost } = req.body;
       const file = (req as any).file as Express.Multer.File | undefined;
 
-      const data: Partial<{ name: string; point_cost: number; image: string }> = {};
+      const data: Partial<{ name: string; type: BannerType; point_cost: number; image: string }> = {};
       if (name !== undefined) data.name = name;
+      if (type !== undefined) {
+        if (!Object.values(BannerType).includes(type)) {
+          return response({ res, code: 400, message: `type must be one of: ${Object.values(BannerType).join(", ")}` });
+        }
+        data.type = type;
+      }
       if (point_cost !== undefined) {
         const pointCostNum = Number(point_cost);
         if (isNaN(pointCostNum) || pointCostNum < 0) {
@@ -109,8 +120,13 @@ const BannerController = {
       const userId = req.user?.id;
       if (!userId) return response({ res, code: 401, message: "Authentication required" });
 
-      const result = await bannerService.unequipBanner(userId);
-      return response({ res, code: 200, message: "Banner unequipped successfully", data: result });
+      const { type } = req.body;
+      if (!Object.values(BannerType).includes(type)) {
+        return response({ res, code: 400, message: `type must be one of: ${Object.values(BannerType).join(", ")}` });
+      }
+
+      const result = await bannerService.unequipBanner(userId, type);
+      return response({ res, code: 200, message: "Unequipped successfully", data: result });
     } catch (error: any) {
       return response({ res, code: 400, message: error.message });
     }
